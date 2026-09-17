@@ -5,7 +5,7 @@
 all five native services running and verified)
 **Repo:** https://github.com/mentor-sator/Sifer
 **Working directory:** `C:\Users\Novemba\Sifer`
-**Last pushed commit:** `4ab72cd` — "P0: SILO object storage on 9000/9001, MinIO replacement recorded"
+**Last pushed commit:** `5afd58e` — "P0: LiveKit 1.13.7 on 7880/7881, all five native services verified"
 
 This file is the handover document. Anyone picking up Sifer — a new conversation,
 a new session, a future you — should be able to read this and know exactly where
@@ -264,8 +264,9 @@ Client tool: `mcli` RELEASE.2026-09-16 in `sifer-infra\mcli-2026.09.16`.
 - Download verified against SHA-256
   `01d1657465bb2f920ba7f89b50016548e409b59fe4aba6ffdc9a4bc529382801`
   (`qdrant-x86_64-pc-windows-msvc.zip`, single `qdrant.exe`).
-- Committed config: `infra/local/qdrant.yaml
-infra/local/livekit.yaml` — `telemetry_disabled: true`,
+- Committed config: `Justfile
+infra/local/livekit.yaml
+infra/local/qdrant.yaml` — `telemetry_disabled: true`,
   relative `./storage` and `./snapshots`, `host: 127.0.0.1`, ports 6333/6334,
   CORS off. No personal paths in the file.
 - Start: copy `infra/local/qdrant.yaml` into `%LOCALAPPDATA%\sifer\qdrant`,
@@ -319,6 +320,46 @@ infra/local/livekit.yaml` — `telemetry_disabled: true`,
   reach this server, so the binding and the UDP range must be reopened then,
   deliberately and with the firewall rules written down.
 
+### 4.6 Running the stack
+
+`tools/Infra.psm1` holds the service table (binary, data directory, ports,
+config file, environment) and the start, stop and status logic. The `Justfile`
+is a thin wrapper:
+
+| Command | Does |
+| --- | --- |
+| `just up` | starts all five in order, skipping any already running |
+| `just down` | stops all five in reverse order |
+| `just status` | table of service, ports, state, bound addresses, PID, owner |
+| `just logs <service>` | tail of that service's log and stderr |
+| `just restart <service>` | stop then start one service |
+
+Rules the module enforces:
+
+- **Ownership, not just the port.** A listening port whose process path is not
+  our pinned binary is reported `foreign` and start refuses, naming the owner.
+  This is what the 5432/6379/6380 collisions taught us.
+- Configs are copied from `infra/local/` into each data directory at start, so
+  the repo stays the source of truth and Redis gets the relative paths it needs.
+- Secrets are read from the credential store, set as environment variables for
+  the launch only, and removed immediately afterwards.
+- Every non-Postgres service is launched with `Start-Process` and its output
+  redirected to `stdout.txt` / `stderr.txt` in its data directory.
+
+**Two Windows traps, both hit and fixed:**
+
+1. `pg_ctl` started with the call operator runs attached to the console, so a
+   Ctrl+C in that window (or closing it) takes PostgreSQL down with it. This
+   killed the database twice before it was understood. Fixed by launching
+   `pg_ctl` with `Start-Process`.
+2. `Start-Process -Wait` waits for the process **and all its descendants**.
+   `pg_ctl` exits but PostgreSQL does not, so `just up` hung forever after
+   starting the database and never reached the other four. Fixed by
+   `-PassThru` plus `$control.WaitForExit()`, which waits for `pg_ctl` alone.
+
+Verified: `just down` → five stopped; `just up` → five started, all
+`running` on `127.0.0.1`, completing in seconds.
+
 ---
 
 ## 5. Secrets and identities
@@ -327,7 +368,8 @@ infra/local/livekit.yaml` — `telemetry_disabled: true`,
 
 ### 5.1 Credential store module — DONE
 
-`tools/CredentialStore.cs` (P/Invoke to `CredWriteW` / `CredReadW` /
+`tools/CredentialStore.cs
+tools/Infra.psm1` (P/Invoke to `CredWriteW` / `CredReadW` /
 `CredFree`) and `tools/SiferSecrets.psm1` expose:
 
 - `Set-SiferSecret -Name <n> -Value <v>`
@@ -394,8 +436,8 @@ during diagnosis.
 | Item | State |
 | --- | --- |
 | Branch | `main` |
-| Pushed | `4ab72cd` |
-| Uncommitted | `infra/local/livekit.yaml`, this `STATE.md` update |
+| Pushed | `5afd58e` |
+| Uncommitted | `Justfile`, `tools/Infra.psm1`, this `STATE.md` update |
 | Encoding | All tracked text files UTF-8, no BOM, LF — enforced by `.gitattributes` |
 
 ### Tracked files
@@ -431,10 +473,11 @@ apps/  packages/  services/  contracts/  infra/local/  secrets/  tools/
 
 | Item | Blueprint ref | State |
 | --- | --- | --- |
-| Commit `infra/local/livekit.yaml` + `STATE.md` | — | Next |
+| Commit `Justfile`, `tools/Infra.psm1` + `STATE.md` | 0B.16 | Next |
+| Confirm LiveKit `::` media port is firewalled | — | Open |
 | Backup age recipient | 0A.6 / 0C.21 | Not started |
 | `secrets/dev.age` | 0C.21 | Not started |
-| `Justfile` (`up`, `down`, `logs`, `secrets`, `migrate`, `gen`, `dev`, `seed`, `verify`) | 0B.16 | Not started |
+| `Justfile` recipes `secrets`, `migrate`, `gen`, `dev`, `seed`, `verify` | 0B.16 | Deferred until they have code to run |
 | `docker-compose.yml` (authored, not run) | 0B.15 | Not started |
 | `turbo.json` | 0A.3 | Not started |
 | ESLint 9 flat config + 2 custom rules | 0A.10 | Not started |
@@ -474,17 +517,21 @@ apps/  packages/  services/  contracts/  infra/local/  secrets/  tools/
 10. **SILO is a single-maintainer fork** (Pigsty). Pinned and hash-verified,
     with signed checksums, but one maintainer is the risk. Watch for a wider
     community line; S3 keeps the exit cheap.
+11. **LiveKit binds its media port to `::`** (all addresses); `bind_addresses`
+    only covers signalling. Relies on Windows Firewall until checked. Must be
+    settled deliberately at P13 when the phone needs to reach it.
 
 ---
 
 ## 9. Next actions, in order
 
-1. Commit `infra/local/livekit.yaml` and `STATE.md`; push.
-2. Add the backup age recipient, then create `secrets/dev.age`.
-3. Write the `Justfile` and `docker-compose.yml`.
-4. Add `turbo.json`, the ESLint flat config, and GitHub Actions.
-5. Close P0 against its definition of done, minus the container half (debt 2).
-6. Revoke the exposed GitHub token; optionally restrict the pre-existing
+1. Commit `Justfile`, `tools/Infra.psm1` and `STATE.md`; push.
+2. Confirm the LiveKit `::` media port is blocked by the firewall.
+3. Add the backup age recipient, then create `secrets/dev.age`.
+4. Write `docker-compose.yml` (authored, not run).
+5. Add `turbo.json`, the ESLint flat config, and GitHub Actions.
+6. Close P0 against its definition of done, minus the container half (debt 2).
+7. Revoke the exposed GitHub token; optionally restrict the pre-existing
    5432 PostgreSQL and 6379 Redis to `127.0.0.1`.
 
 ---
