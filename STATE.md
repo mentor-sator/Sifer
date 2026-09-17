@@ -2,9 +2,9 @@
 
 **Last updated:** 17 September 2026
 **Phase:** P0 — Machine Roles, Toolchain, and Native Infrastructure (in progress)
-**Repo:** https://github.com/ngabonzizacedrickkennedy/Sifer
+**Repo:** https://github.com/mentor-sator/Sifer
 **Working directory:** `C:\Users\Novemba\Sifer`
-**Last pushed commit:** `78fc84e` — "P0: age workstation identity, credential store module, LF normalisation"
+**Last pushed commit:** `55e55da` — "P0: PostgreSQL 16.4 on 5433, Redis 7.4.11 on 6390, state handover"
 
 This file is the handover document. Anyone picking up Sifer — a new conversation,
 a new session, a future you — should be able to read this and know exactly where
@@ -114,6 +114,28 @@ No official Windows Redis exists. The community `redis-windows` msys2 build is
 used: newest 7.4 patch, plain process, no service. Compose will pin
 `redis:7.4.11-alpine` to match (confirm the tag exists when writing the file).
 
+### 2.8 Qdrant collection deletes must be sent twice on Windows
+
+Known, open upstream bug — qdrant/qdrant issue #5924 (reported on v1.13.2,
+reproduced here on v1.12.4, no fix as of September 2026). On the Windows binary
+the first `DELETE /collections/{name}` returns `Access is denied (os error 5)`:
+the collection is unloaded and disappears from `GET /collections`, but its
+folder stays in `storage/collections`. A second `DELETE` removes the folder.
+Reproduced 5/5.
+
+**Rule for all Sifer code:** every collection delete is sent twice; an
+`Access is denied` on the first attempt is expected, an error on the second is
+real. Verified 5/5 with create → upsert → delete-twice → folder gone.
+Point writes, reads and searches are unaffected. Linux containers do not have
+this bug.
+
+### 2.9 Defender exclusion on the data root
+
+`%LOCALAPPDATA%\sifer` is excluded from Microsoft Defender real-time scanning
+(data only; binaries in `sifer-infra` are still scanned). Standard practice for
+database data directories. **It did not fix 2.8** — recorded so nobody assumes
+it did.
+
 ---
 
 ## 3. Toolchain — installed and verified
@@ -171,11 +193,12 @@ Binaries live in `%LOCALAPPDATA%\sifer-infra`. Data lives in
 | --- | --- | --- | --- | --- | --- |
 | PostgreSQL | 16.4 (EDB zip) | `sifer-infra\postgresql-16.4` | `sifer\pgdata` | `127.0.0.1:5433` | **Running, verified** |
 | Redis | 7.4.11 (redis-windows msys2) | `sifer-infra\redis-7.4.11` | `sifer\redis` | `127.0.0.1:6390` | **Running, verified** |
-| Qdrant | v1.12.4 | — | — | — | Not started |
+| Qdrant | 1.12.4 (official Windows zip) | `sifer-infra\qdrant-1.12.4` | `sifer\qdrant` | `127.0.0.1:6333` HTTP, `:6334` gRPC | **Running, verified** |
 | MinIO | pinned release | — | — | — | Not started |
 | LiveKit | pinned release | — | — | — | Not started |
 
-Logs: `%LOCALAPPDATA%\sifer\logs\postgres.log`, `%LOCALAPPDATA%\sifer\redis\redis.log`.
+Logs: `%LOCALAPPDATA%\sifer\logs\postgres.log`, `%LOCALAPPDATA%\sifer\redis\redis.log`,
+`%LOCALAPPDATA%\sifer\qdrant\stdout.txt`.
 
 **Nothing auto-starts.** After a reboot both must be started again; the
 `Justfile` (`just up`) will own this.
@@ -212,6 +235,23 @@ Logs: `%LOCALAPPDATA%\sifer\logs\postgres.log`, `%LOCALAPPDATA%\sifer\redis\redi
   talking to other programs' Redis. The start script confirms the listening PID
   equals the started process.
 
+### 4.3 Qdrant
+
+- Download verified against SHA-256
+  `01d1657465bb2f920ba7f89b50016548e409b59fe4aba6ffdc9a4bc529382801`
+  (`qdrant-x86_64-pc-windows-msvc.zip`, single `qdrant.exe`).
+- Committed config: `infra/local/qdrant.yaml` — `telemetry_disabled: true`,
+  relative `./storage` and `./snapshots`, `host: 127.0.0.1`, ports 6333/6334,
+  CORS off. No personal paths in the file.
+- Start: copy `infra/local/qdrant.yaml` into `%LOCALAPPDATA%\sifer\qdrant`,
+  set `QDRANT__SERVICE__API_KEY` from the credential store for the launch only,
+  run `qdrant.exe --config-path qdrant.yaml` with that working directory,
+  then remove the variable from the session.
+- Harmless startup warnings: `Config file not found: config/config`,
+  `config/development`, and missing `./static` (web UI not used).
+- Verified: both ports on `127.0.0.1` owned by the started PID; request without
+  key → `401`; `version 1.12.4`; create, upsert, delete-twice 5/5 (see 2.8).
+
 ---
 
 ## 5. Secrets and identities
@@ -236,6 +276,7 @@ Load with `Import-Module .\tools\SiferSecrets.psm1 -Force` from the repo root.
 | `sifer/age/workstation` | age private identity |
 | `sifer/postgres/superuser` | PostgreSQL `postgres` role password (64 hex) |
 | `sifer/redis/default` | Redis `requirepass` (64 hex) |
+| `sifer/qdrant/api-key` | Qdrant service API key (64 hex) |
 
 ### 5.2 Code-signing certificate — DONE
 
@@ -269,9 +310,10 @@ The blueprint's second recipient (verification target) no longer exists.
 
 ### 5.4 GitHub — RESOLVED
 
-Pushing as `ngabonzizacedrickkennedy` works; commits `9f51556` and `78fc84e`
-are on `origin/main`. Local repo config pins
-`credential.https://github.com.username` to that account.
+GitHub account renamed from `ngabonzizacedrickkennedy` to `mentor-sator`
+(September 2026). `origin` is `https://github.com/mentor-sator/Sifer.git`.
+Commits `9f51556`, `78fc84e` and `55e55da` are on `origin/main`. Local repo config pins
+`credential.https://github.com.username` to `mentor-sator`.
 
 **Still to do:** revoke the expired `ghp_` token that was displayed on screen
 during diagnosis.
@@ -283,8 +325,8 @@ during diagnosis.
 | Item | State |
 | --- | --- |
 | Branch | `main` |
-| Pushed | `78fc84e` |
-| Uncommitted | `infra/local/redis.conf`, this `STATE.md` |
+| Pushed | `55e55da` |
+| Uncommitted | `infra/local/qdrant.yaml`, this `STATE.md` update |
 | Encoding | All tracked text files UTF-8, no BOM, LF — enforced by `.gitattributes` |
 
 ### Tracked files
@@ -294,6 +336,8 @@ during diagnosis.
 .gitignore
 .node-version
 README.md
+STATE.md
+infra/local/redis.conf
 pnpm-workspace.yaml
 rust-toolchain.toml
 secrets/recipients.txt
@@ -317,8 +361,7 @@ apps/  packages/  services/  contracts/  infra/local/  secrets/  tools/
 
 | Item | Blueprint ref | State |
 | --- | --- | --- |
-| Commit `infra/local/redis.conf` + `STATE.md` | — | Next |
-| Qdrant v1.12.4, `127.0.0.1` | 0B.12–13 | Not started |
+| Commit `infra/local/qdrant.yaml` + `STATE.md` | — | Next |
 | MinIO, `127.0.0.1` (default is `0.0.0.0`) | 0B.12–13 | Not started |
 | LiveKit, `127.0.0.1` (default is `0.0.0.0`) | 0B.12–13 | Not started |
 | Backup age recipient | 0A.6 / 0C.21 | Not started |
@@ -358,14 +401,16 @@ apps/  packages/  services/  contracts/  infra/local/  secrets/  tools/
    build.
 7. **Redis is a community build.** Pinned and hash-verified, not vendor-supported.
 8. **Single age identity** until the backup recipient is added (5.3).
+9. **Qdrant Windows delete bug** (upstream #5924). Worked around by delete-twice
+   (2.8). Remove the workaround when upstream fixes it.
 
 ---
 
 ## 9. Next actions, in order
 
-1. Commit `infra/local/redis.conf` and `STATE.md`; push.
-2. Install Qdrant v1.12.4, bound to `127.0.0.1`, verified by PID ownership.
-3. Install MinIO and LiveKit, bound to `127.0.0.1`, same verification.
+1. Commit `infra/local/qdrant.yaml` and `STATE.md`; push.
+2. Install MinIO, bound to `127.0.0.1`, verified by PID ownership.
+3. Install LiveKit, bound to `127.0.0.1`, same verification.
 4. Add the backup age recipient, then create `secrets/dev.age`.
 5. Write the `Justfile` and `docker-compose.yml`.
 6. Add `turbo.json`, the ESLint flat config, and GitHub Actions.
