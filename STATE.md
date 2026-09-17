@@ -4,7 +4,7 @@
 **Phase:** P0 — Machine Roles, Toolchain, and Native Infrastructure (in progress)
 **Repo:** https://github.com/mentor-sator/Sifer
 **Working directory:** `C:\Users\Novemba\Sifer`
-**Last pushed commit:** `55e55da` — "P0: PostgreSQL 16.4 on 5433, Redis 7.4.11 on 6390, state handover"
+**Last pushed commit:** `a6869ff` — "P0: Qdrant 1.12.4 on 6333/6334 with API key, repo moved to mentor-sator"
 
 This file is the handover document. Anyone picking up Sifer — a new conversation,
 a new session, a future you — should be able to read this and know exactly where
@@ -136,6 +136,25 @@ this bug.
 database data directories. **It did not fix 2.8** — recorded so nobody assumes
 it did.
 
+### 2.10 MinIO replaced by SILO (pgsty/silo)
+
+**The blueprint's MinIO is no longer installable.** MinIO stopped publishing
+community binaries and container images in late 2025, declared the community
+edition in maintenance mode in December 2025, and the upstream repository was
+archived read-only on **25 April 2026**. No releases, no security patches.
+
+Sifer uses **SILO** (`pgsty/silo`), the maintained community fork of the
+open-source MinIO server: active releases (2026-09-16 used here), a published
+Windows amd64 binary with checksums, and deliberate compatibility with the S3
+API, the `MINIO_*` environment variables, `x-minio-*` headers, `/minio/*`
+routes and the `.minio.sys` on-disk format. Its client ships as `mcli`.
+Matching Linux container images exist (`pgsty/silo`) for `docker-compose.yml`.
+
+Alternatives considered and rejected: Garage (no Windows build), SeaweedFS
+(needs an external metadata store), RustFS (immature), Ceph (far too heavy),
+building MinIO from frozen source (we would own every future CVE).
+Sifer's code speaks plain S3, so replacing the server later is cheap.
+
 ---
 
 ## 3. Toolchain — installed and verified
@@ -194,11 +213,14 @@ Binaries live in `%LOCALAPPDATA%\sifer-infra`. Data lives in
 | PostgreSQL | 16.4 (EDB zip) | `sifer-infra\postgresql-16.4` | `sifer\pgdata` | `127.0.0.1:5433` | **Running, verified** |
 | Redis | 7.4.11 (redis-windows msys2) | `sifer-infra\redis-7.4.11` | `sifer\redis` | `127.0.0.1:6390` | **Running, verified** |
 | Qdrant | 1.12.4 (official Windows zip) | `sifer-infra\qdrant-1.12.4` | `sifer\qdrant` | `127.0.0.1:6333` HTTP, `:6334` gRPC | **Running, verified** |
-| MinIO | pinned release | — | — | — | Not started |
+| SILO (MinIO fork) | RELEASE.2026-09-16 | `sifer-infra\silo-2026.09.16` | `sifer\silo\data` | `127.0.0.1:9000` S3, `:9001` console | **Running, verified** |
 | LiveKit | pinned release | — | — | — | Not started |
 
 Logs: `%LOCALAPPDATA%\sifer\logs\postgres.log`, `%LOCALAPPDATA%\sifer\redis\redis.log`,
-`%LOCALAPPDATA%\sifer\qdrant\stdout.txt`.
+`%LOCALAPPDATA%\sifer\qdrant\stdout.txt`,
+`%LOCALAPPDATA%\sifer\silo\stdout.txt` and `stderr.txt`.
+
+Client tool: `mcli` RELEASE.2026-09-16 in `sifer-infra\mcli-2026.09.16`.
 
 **Nothing auto-starts.** After a reboot both must be started again; the
 `Justfile` (`just up`) will own this.
@@ -254,6 +276,28 @@ Logs: `%LOCALAPPDATA%\sifer\logs\postgres.log`, `%LOCALAPPDATA%\sifer\redis\redi
 
 ---
 
+### 4.4 SILO (object storage)
+
+- Downloads verified against SHA-256:
+  `f99f4c376754aeea50c982afdd7aa3fd62ee9393e0ad603be570055c2342ee41`
+  (`silo_20260916000000.0.0_windows_amd64.tar.gz`) and
+  `24f90568cbb010fd792a96cc286b3505bb6a620dd2932f35db556a4d0ac11e52`
+  (`mcli_20260916000000.0.0_windows_amd64.tar.gz`).
+- No config file: flags and environment only. Root user `sifer-admin`,
+  password from the credential store, `MINIO_UPDATE=off`.
+- Start: set `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` for the launch only, run
+  `silo.exe server data --address 127.0.0.1:9000 --console-address 127.0.0.1:9001`
+  with working directory `%LOCALAPPDATA%\sifer\silo`, then clear the variables.
+- Client credentials are passed as `MC_HOST_sifer=http://sifer-admin:<password>@127.0.0.1:9000`
+  for the command only. **Never `mcli alias set`** — that writes the secret to
+  `%USERPROFILE%\mcli\config.json`. Verified that file holds no Sifer secret.
+- Verified: both ports owned by the started PID; `/minio/health/live` → 200;
+  bucket and object reads without credentials → **403**; create bucket, upload,
+  read back identical, remove bucket → all pass. The bare `/` returns 200
+  (console page), which is expected.
+
+---
+
 ## 5. Secrets and identities
 
 **No secret values appear in this file, by design.**
@@ -277,6 +321,7 @@ Load with `Import-Module .\tools\SiferSecrets.psm1 -Force` from the repo root.
 | `sifer/postgres/superuser` | PostgreSQL `postgres` role password (64 hex) |
 | `sifer/redis/default` | Redis `requirepass` (64 hex) |
 | `sifer/qdrant/api-key` | Qdrant service API key (64 hex) |
+| `sifer/silo/root-password` | SILO root password for user `sifer-admin` (64 hex) |
 
 ### 5.2 Code-signing certificate — DONE
 
@@ -325,8 +370,8 @@ during diagnosis.
 | Item | State |
 | --- | --- |
 | Branch | `main` |
-| Pushed | `55e55da` |
-| Uncommitted | `infra/local/qdrant.yaml`, this `STATE.md` update |
+| Pushed | `a6869ff` |
+| Uncommitted | this `STATE.md` update |
 | Encoding | All tracked text files UTF-8, no BOM, LF — enforced by `.gitattributes` |
 
 ### Tracked files
@@ -337,6 +382,7 @@ during diagnosis.
 .node-version
 README.md
 STATE.md
+infra/local/qdrant.yaml
 infra/local/redis.conf
 pnpm-workspace.yaml
 rust-toolchain.toml
@@ -361,8 +407,7 @@ apps/  packages/  services/  contracts/  infra/local/  secrets/  tools/
 
 | Item | Blueprint ref | State |
 | --- | --- | --- |
-| Commit `infra/local/qdrant.yaml` + `STATE.md` | — | Next |
-| MinIO, `127.0.0.1` (default is `0.0.0.0`) | 0B.12–13 | Not started |
+| Commit `STATE.md` | — | Next |
 | LiveKit, `127.0.0.1` (default is `0.0.0.0`) | 0B.12–13 | Not started |
 | Backup age recipient | 0A.6 / 0C.21 | Not started |
 | `secrets/dev.age` | 0C.21 | Not started |
@@ -403,19 +448,21 @@ apps/  packages/  services/  contracts/  infra/local/  secrets/  tools/
 8. **Single age identity** until the backup recipient is added (5.3).
 9. **Qdrant Windows delete bug** (upstream #5924). Worked around by delete-twice
    (2.8). Remove the workaround when upstream fixes it.
+10. **SILO is a single-maintainer fork** (Pigsty). Pinned and hash-verified,
+    with signed checksums, but one maintainer is the risk. Watch for a wider
+    community line; S3 keeps the exit cheap.
 
 ---
 
 ## 9. Next actions, in order
 
-1. Commit `infra/local/qdrant.yaml` and `STATE.md`; push.
-2. Install MinIO, bound to `127.0.0.1`, verified by PID ownership.
-3. Install LiveKit, bound to `127.0.0.1`, same verification.
-4. Add the backup age recipient, then create `secrets/dev.age`.
-5. Write the `Justfile` and `docker-compose.yml`.
-6. Add `turbo.json`, the ESLint flat config, and GitHub Actions.
-7. Close P0 against its definition of done, minus the container half (debt 2).
-8. Revoke the exposed GitHub token; optionally restrict the pre-existing
+1. Commit `STATE.md`; push.
+2. Install LiveKit, bound to `127.0.0.1`, same verification.
+3. Add the backup age recipient, then create `secrets/dev.age`.
+4. Write the `Justfile` and `docker-compose.yml`.
+5. Add `turbo.json`, the ESLint flat config, and GitHub Actions.
+6. Close P0 against its definition of done, minus the container half (debt 2).
+7. Revoke the exposed GitHub token; optionally restrict the pre-existing
    5432 PostgreSQL and 6379 Redis to `127.0.0.1`.
 
 ---
