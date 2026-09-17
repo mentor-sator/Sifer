@@ -1,10 +1,11 @@
 # Sifer — Build State
 
 **Last updated:** 17 September 2026
-**Phase:** P0 — Machine Roles, Toolchain, and Native Infrastructure (in progress)
+**Phase:** P0 — Machine Roles, Toolchain, and Native Infrastructure (in progress;
+all five native services running and verified)
 **Repo:** https://github.com/mentor-sator/Sifer
 **Working directory:** `C:\Users\Novemba\Sifer`
-**Last pushed commit:** `a6869ff` — "P0: Qdrant 1.12.4 on 6333/6334 with API key, repo moved to mentor-sator"
+**Last pushed commit:** `4ab72cd` — "P0: SILO object storage on 9000/9001, MinIO replacement recorded"
 
 This file is the handover document. Anyone picking up Sifer — a new conversation,
 a new session, a future you — should be able to read this and know exactly where
@@ -214,11 +215,12 @@ Binaries live in `%LOCALAPPDATA%\sifer-infra`. Data lives in
 | Redis | 7.4.11 (redis-windows msys2) | `sifer-infra\redis-7.4.11` | `sifer\redis` | `127.0.0.1:6390` | **Running, verified** |
 | Qdrant | 1.12.4 (official Windows zip) | `sifer-infra\qdrant-1.12.4` | `sifer\qdrant` | `127.0.0.1:6333` HTTP, `:6334` gRPC | **Running, verified** |
 | SILO (MinIO fork) | RELEASE.2026-09-16 | `sifer-infra\silo-2026.09.16` | `sifer\silo\data` | `127.0.0.1:9000` S3, `:9001` console | **Running, verified** |
-| LiveKit | pinned release | — | — | — | Not started |
+| LiveKit | 1.13.7 (official Windows zip) | `sifer-infra\livekit-1.13.7` | `sifer\livekit` | `127.0.0.1:7880` signal, `:7881` TCP media | **Running, verified** |
 
 Logs: `%LOCALAPPDATA%\sifer\logs\postgres.log`, `%LOCALAPPDATA%\sifer\redis\redis.log`,
 `%LOCALAPPDATA%\sifer\qdrant\stdout.txt`,
-`%LOCALAPPDATA%\sifer\silo\stdout.txt` and `stderr.txt`.
+`%LOCALAPPDATA%\sifer\silo\stdout.txt` and `stderr.txt`,
+`%LOCALAPPDATA%\sifer\livekit\stdout.txt` and `stderr.txt`.
 
 Client tool: `mcli` RELEASE.2026-09-16 in `sifer-infra\mcli-2026.09.16`.
 
@@ -262,7 +264,8 @@ Client tool: `mcli` RELEASE.2026-09-16 in `sifer-infra\mcli-2026.09.16`.
 - Download verified against SHA-256
   `01d1657465bb2f920ba7f89b50016548e409b59fe4aba6ffdc9a4bc529382801`
   (`qdrant-x86_64-pc-windows-msvc.zip`, single `qdrant.exe`).
-- Committed config: `infra/local/qdrant.yaml` — `telemetry_disabled: true`,
+- Committed config: `infra/local/qdrant.yaml
+infra/local/livekit.yaml` — `telemetry_disabled: true`,
   relative `./storage` and `./snapshots`, `host: 127.0.0.1`, ports 6333/6334,
   CORS off. No personal paths in the file.
 - Start: copy `infra/local/qdrant.yaml` into `%LOCALAPPDATA%\sifer\qdrant`,
@@ -296,6 +299,26 @@ Client tool: `mcli` RELEASE.2026-09-16 in `sifer-infra\mcli-2026.09.16`.
   read back identical, remove bucket → all pass. The bare `/` returns 200
   (console page), which is expected.
 
+### 4.5 LiveKit
+
+- Download verified against LiveKit's published checksum
+  `e539e7d2f75807b9c9202cd2a0bf2cb3d52fc4c52978a6953e0f47bc339fe77f`
+  (`livekit_1.13.7_windows_amd64.zip`).
+- Committed config: `infra/local/livekit.yaml` — `port: 7880`,
+  `bind_addresses: [127.0.0.1]`, `rtc.tcp_port: 7881`, UDP range 50000-50020,
+  `use_external_ip: false`. No keys in the file.
+- Keys: API key `sifer-dev`, secret from the credential store, passed as
+  `LIVEKIT_KEYS="sifer-dev: <secret>"` for the launch only.
+- Start: copy `infra/local/livekit.yaml` into `%LOCALAPPDATA%\sifer\livekit`
+  and run `livekit-server.exe --config livekit.yaml` with that working
+  directory.
+- Verified: `GET /` → 200; `ListRooms` without a token → **401**; with an
+  HS256 access token signed by the secret, create → list → delete round trip
+  passes.
+- **Localhost binding blocks the phone.** Sifer Live (P13) needs the handset to
+  reach this server, so the binding and the UDP range must be reopened then,
+  deliberately and with the firewall rules written down.
+
 ---
 
 ## 5. Secrets and identities
@@ -322,6 +345,7 @@ Load with `Import-Module .\tools\SiferSecrets.psm1 -Force` from the repo root.
 | `sifer/redis/default` | Redis `requirepass` (64 hex) |
 | `sifer/qdrant/api-key` | Qdrant service API key (64 hex) |
 | `sifer/silo/root-password` | SILO root password for user `sifer-admin` (64 hex) |
+| `sifer/livekit/api-secret` | LiveKit secret for API key `sifer-dev` (64 hex) |
 
 ### 5.2 Code-signing certificate — DONE
 
@@ -370,8 +394,8 @@ during diagnosis.
 | Item | State |
 | --- | --- |
 | Branch | `main` |
-| Pushed | `a6869ff` |
-| Uncommitted | this `STATE.md` update |
+| Pushed | `4ab72cd` |
+| Uncommitted | `infra/local/livekit.yaml`, this `STATE.md` update |
 | Encoding | All tracked text files UTF-8, no BOM, LF — enforced by `.gitattributes` |
 
 ### Tracked files
@@ -407,8 +431,7 @@ apps/  packages/  services/  contracts/  infra/local/  secrets/  tools/
 
 | Item | Blueprint ref | State |
 | --- | --- | --- |
-| Commit `STATE.md` | — | Next |
-| LiveKit, `127.0.0.1` (default is `0.0.0.0`) | 0B.12–13 | Not started |
+| Commit `infra/local/livekit.yaml` + `STATE.md` | — | Next |
 | Backup age recipient | 0A.6 / 0C.21 | Not started |
 | `secrets/dev.age` | 0C.21 | Not started |
 | `Justfile` (`up`, `down`, `logs`, `secrets`, `migrate`, `gen`, `dev`, `seed`, `verify`) | 0B.16 | Not started |
@@ -456,13 +479,12 @@ apps/  packages/  services/  contracts/  infra/local/  secrets/  tools/
 
 ## 9. Next actions, in order
 
-1. Commit `STATE.md`; push.
-2. Install LiveKit, bound to `127.0.0.1`, same verification.
-3. Add the backup age recipient, then create `secrets/dev.age`.
-4. Write the `Justfile` and `docker-compose.yml`.
-5. Add `turbo.json`, the ESLint flat config, and GitHub Actions.
-6. Close P0 against its definition of done, minus the container half (debt 2).
-7. Revoke the exposed GitHub token; optionally restrict the pre-existing
+1. Commit `infra/local/livekit.yaml` and `STATE.md`; push.
+2. Add the backup age recipient, then create `secrets/dev.age`.
+3. Write the `Justfile` and `docker-compose.yml`.
+4. Add `turbo.json`, the ESLint flat config, and GitHub Actions.
+5. Close P0 against its definition of done, minus the container half (debt 2).
+6. Revoke the exposed GitHub token; optionally restrict the pre-existing
    5432 PostgreSQL and 6379 Redis to `127.0.0.1`.
 
 ---
