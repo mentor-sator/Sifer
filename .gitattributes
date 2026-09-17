@@ -1,0 +1,6 @@
+* text=auto eol=lf
+*.age binary
+*.pfx binary
+*.png binary
+*.jpg binary
+*.ico binary

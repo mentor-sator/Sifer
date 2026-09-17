@@ -1,4 +1,4 @@
-﻿# Sifer
+# Sifer
 
 An AI assistant with two bodies and one memory: a desktop orb you drag onto a
 problem, and a mobile camera guide that watches you work.
