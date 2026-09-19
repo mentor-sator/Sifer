@@ -33,3 +33,9 @@ verify:
 
 fmt:
     pnpm exec prettier --write .
+
+seed:
+    Import-Module ./tools/Database.psm1 -Force; Reset-SiferDatabase -Target (Get-SiferDbTarget)
+
+migrate:
+    Import-Module ./tools/Database.psm1 -Force; Invoke-SiferMigrate -Target (Get-SiferDbTarget)
