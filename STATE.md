@@ -4,7 +4,7 @@
 **Phase:** P0 — Machine Roles, Toolchain, and Native Infrastructure
 **Repo:** https://github.com/mentor-sator/Sifer
 **Working directory:** `C:\Users\Novemba\Sifer`
-**Last pushed commit:** "P0: backup age recipient, encrypted dev secrets file" (day 3; `git log -1` for the hash)
+**Last pushed commit:** "P0: STATE — compose file recorded" (day 3; `git log -1` for the hash)
 
 This file is the handover document. Anyone picking up Sifer — a new conversation,
 a new session, a future you — should be able to read this and know exactly where
@@ -18,8 +18,9 @@ the build stands, what was decided and why, and what is blocking.
 work, all five native services are installed, verified, driven by `just`, and
 blocked from the network by explicit firewall rules. Two age recipients exist
 (workstation + offline backup) and `secrets/dev.age` holds every development
-secret plus the signing certificate. What remains is the compose file, the
-JS/TS tooling and CI — no more service installs, no more secrets work.
+secret plus the signing certificate. `docker-compose.yml` is authored and
+pinned by digest. What remains is the JS/TS tooling (`turbo.json`, ESLint) and
+CI — no more service installs, no more secrets work, no more infrastructure.
 
 **First three commands of the day**, from `C:\Users\Novemba\Sifer`:
 
@@ -139,8 +140,8 @@ internally; only connection URLs differ between the two stacks.
 ### 2.7 Redis from redis-windows 7.4.11 (msys2), not 7.4.x Alpine parity by build
 
 No official Windows Redis exists. The community `redis-windows` msys2 build is
-used: newest 7.4 patch, plain process, no service. Compose will pin
-`redis:7.4.11-alpine` to match (confirm the tag exists when writing the file).
+used: newest 7.4 patch, plain process, no service. Compose pins
+`redis:7.4.11-alpine` to match; the tag was confirmed on Docker Hub on day 3 (4.8).
 
 ### 2.8 Qdrant collection deletes must be sent twice on Windows
 
@@ -425,6 +426,49 @@ firewall prompt for a Sifer binary, choose Cancel, then re-run it.
 Verified: five `Sifer block inbound …` rules, all enabled, no Allow rules left
 for any `sifer-infra` program.
 
+### 4.8 Container stack — `docker-compose.yml` (authored, not run)
+
+The same five services as containers, for CI and any future Docker host.
+**Never run on this laptop** (debt 2). Project name `sifer`.
+
+| Service | Image (tag; pinned by digest in the file) | Published on |
+| --- | --- | --- |
+| postgres | `postgres:16.4-bookworm` | `127.0.0.1:5432` |
+| redis | `redis:7.4.11-alpine` | `127.0.0.1:6379` |
+| qdrant | `qdrant/qdrant:v1.12.4` | `127.0.0.1:6333`, `:6334` |
+| silo | `pgsty/silo:RELEASE.2026-09-16T00-00-00Z` (multi-arch, not distroless) | `127.0.0.1:9000`, `:9001` |
+| livekit | `livekit/livekit-server:v1.13.7` | `127.0.0.1:7880`, `:7881`, UDP `50000-50020` |
+
+Rules the file follows:
+
+- **Tag and digest** on every image (`name:tag@sha256:…`). Digests were read
+  from the Docker Hub registry API on day 3 and written into the file by
+  script, never transcribed by hand.
+- **Every port published on `127.0.0.1` only.**
+- **No secret values in the file.** Five required variables, each
+  `${VAR:?…}` so compose refuses to start without them: `POSTGRES_PASSWORD`,
+  `REDIS_PASSWORD`, `QDRANT_API_KEY`, `SILO_ROOT_PASSWORD`,
+  `LIVEKIT_API_SECRET`. Names only in the committed `.env.example`; real values
+  go in `.env` (gitignored), taken from the credential store.
+- Named volumes `postgres-data`, `redis-data`, `qdrant-data`, `silo-data`.
+  LiveKit keeps no state.
+- LiveKit is configured through `LIVEKIT_CONFIG` (inline YAML: 7880, TCP 7881,
+  UDP 50000-50020, `use_external_ip: false`) and `LIVEKIT_KEYS`
+  (`sifer-dev: <secret>`), so no second config file is needed.
+- Healthchecks on postgres (`pg_isready`), redis (`redis-cli ping`), qdrant
+  (TCP probe via bash). **None yet on silo and livekit**: what their images
+  contain is unverified, so the check is added on the first real run rather
+  than guessed.
+
+Verified (static, no engine): YAML parses; five services, four volumes; every
+image matches `name:tag@sha256:<64 hex>`; every published port starts
+`127.0.0.1:`; no 64-hex value outside the digests; exactly the five variables
+above.
+
+**Re-pinning after a version bump:** change the tag, fetch the new digest from
+the registry API (the day-3 lookup, repeated), and bump the native install to
+the same version in the same commit — native and compose never drift.
+
 ---
 
 ## 5. Secrets and identities
@@ -543,19 +587,21 @@ during diagnosis.
 | Item | State |
 | --- | --- |
 | Branch | `main` |
-| Pushed | day 3 dev secrets commit |
+| Pushed | day 3 STATE commit (compose recorded) |
 | Uncommitted | nothing |
 | Encoding | All tracked text files UTF-8, no BOM, LF — enforced by `.gitattributes` |
 
 ### Tracked files
 
 ```
+.env.example
 .gitattributes
 .gitignore
 .node-version
 Justfile
 README.md
 STATE.md
+docker-compose.yml
 infra/local/livekit.yaml
 infra/local/qdrant.yaml
 infra/local/redis.conf
@@ -591,8 +637,8 @@ apps/  packages/  services/  contracts/  infra/local/  secrets/  tools/
 | `secrets/dev.age` | 0C.21 | **Done** (day 3, 5.5) |
 | `Justfile` recipe `secrets` | 0B.16 | **Done** (plus `secrets-check`) |
 | `Justfile` recipes `migrate`, `gen`, `dev`, `seed`, `verify` | 0B.16 | Deferred until they have code to run |
-| `docker-compose.yml` (authored, not run) | 0B.15 | **Next** |
-| `turbo.json` | 0A.3 | Not started |
+| `docker-compose.yml` (authored, not run) | 0B.15 | **Done** (day 3, 4.8) |
+| `turbo.json` | 0A.3 | **Next** |
 | ESLint 9 flat config + 2 custom rules | 0A.10 | Not started |
 | GitHub Actions | 0A.7 | Unblocked, not started |
 
@@ -611,7 +657,9 @@ apps/  packages/  services/  contracts/  infra/local/  secrets/  tools/
 ## 8. Named debt
 
 1. **Local model path unproven.** Text and vision run remote in development.
-2. **Phase-boundary gate cannot run.** No container engine here.
+2. **Phase-boundary gate cannot run.** No container engine here. `docker-compose.yml`
+   is statically validated only; its first real run (CI or a Docker host) must
+   confirm `LIVEKIT_CONFIG` loading and add silo and livekit healthchecks (4.8).
 3. **Agency guest shares a host with the workstation.** Violates Document 1
    §3.5.3. Resolve before P9. Isolation conditions when built: no shared folders,
    no drive redirection, no clipboard redirection, no enhanced session mode, a
@@ -641,13 +689,10 @@ apps/  packages/  services/  contracts/  infra/local/  secrets/  tools/
 
 ## 9. Next actions, in order
 
-1. Write `docker-compose.yml` (authored, never run here), pinned to the same
-   versions as the native stack: PostgreSQL 16.4, Redis 7.4.11, Qdrant 1.12.4,
-   SILO RELEASE.2026-09-16, LiveKit 1.13.7.
-2. Add `turbo.json` and the ESLint 9 flat config with the two custom rules.
-3. Add GitHub Actions.
-4. Close P0 against its definition of done, minus the container half (debt 2).
-5. Revoke the exposed GitHub token; optionally restrict the pre-existing
+1. Add `turbo.json` and the ESLint 9 flat config with the two custom rules.
+2. Add GitHub Actions.
+3. Close P0 against its definition of done, minus the container half (debt 2).
+4. Revoke the exposed GitHub token; optionally restrict the pre-existing
    5432 PostgreSQL and 6379 Redis to `127.0.0.1`.
 
 ---
