@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TURBO_TELEMETRY_DISABLED: "1"
+
+jobs:
+  javascript:
+    name: JavaScript (lint, typecheck, test, build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: actions/checkout v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: pnpm/action-setup v6.1.0 (version from packageManager)
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+
+      - name: actions/setup-node v7.0.0 (version from .node-version)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+  compose:
+    name: Container stack (docker-compose.yml)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: actions/checkout v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Generate throwaway credentials
+        run: |
+          for name in POSTGRES_PASSWORD REDIS_PASSWORD QDRANT_API_KEY SILO_ROOT_PASSWORD LIVEKIT_API_SECRET; do
+            value="$(openssl rand -hex 32)"
+            echo "::add-mask::$value"
+            echo "$name=$value" >> "$GITHUB_ENV"
+          done
+
+      - name: Validate compose file
+        run: docker compose config --quiet
+
+      - name: Start stack
+        run: docker compose up --detach --wait --wait-timeout 180
+
+      - name: Smoke test
+        run: |
+          docker compose exec -T postgres pg_isready -U postgres
+          docker compose exec -T redis sh -c 'redis-cli --no-auth-warning -a "$REDIS_PASSWORD" ping' | grep -q PONG
+          curl --fail --silent --show-error -H "api-key: $QDRANT_API_KEY" http://127.0.0.1:6333/collections
+          curl --fail --silent --show-error http://127.0.0.1:9000/minio/health/live
+          curl --fail --silent --show-error http://127.0.0.1:7880/
+
+      - name: Service logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Tear down
+        if: always()
+        run: docker compose down --volumes
