@@ -6,6 +6,7 @@ Import-Module (Join-Path $PSScriptRoot 'SiferSecrets.psm1') -Force
 $script:Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $script:InfraRoot = Join-Path $env:LOCALAPPDATA 'sifer-infra'
 $script:DataRoot = Join-Path $env:LOCALAPPDATA 'sifer'
+$script:Loopback = @('127.0.0.1', '::1')
 
 $script:Services = @(
     @{
@@ -71,15 +72,15 @@ function Get-ServiceDefinition {
 
 function Get-PortListener {
     param([int]$Port)
-    $connection = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
-    if (-not $connection) { return $null }
-    $process = Get-Process -Id $connection.OwningProcess -ErrorAction SilentlyContinue
-    [pscustomobject]@{
-        Port        = $Port
-        Address     = $connection.LocalAddress
-        ProcessId   = $connection.OwningProcess
-        ProcessName = if ($process) { $process.ProcessName } else { 'unknown' }
-        Path        = if ($process) { $process.Path } else { $null }
+    foreach ($connection in @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)) {
+        $process = Get-Process -Id $connection.OwningProcess -ErrorAction SilentlyContinue
+        [pscustomobject]@{
+            Port        = $Port
+            Address     = $connection.LocalAddress
+            ProcessId   = $connection.OwningProcess
+            ProcessName = if ($process) { $process.ProcessName } else { 'unknown' }
+            Path        = if ($process) { $process.Path } else { $null }
+        }
     }
 }
 
@@ -87,30 +88,38 @@ function Get-SiferStatus {
     param([string[]]$Name)
     $selected = if ($Name) { @($Name | ForEach-Object { Get-ServiceDefinition -Name $_ }) } else { $script:Services }
     foreach ($service in $selected) {
-        $listeners = @()
-        foreach ($port in $service.Ports) {
-            $listener = Get-PortListener -Port $port
-            if ($listener) { $listeners += $listener }
-        }
+        $listeners = @($service.Ports | ForEach-Object { Get-PortListener -Port $_ })
 
         $state = 'stopped'
-        $addresses = ''
+        $tcp = ''
+        $udp = ''
+        $exposed = ''
         $processId = $null
         $owner = ''
 
         if ($listeners.Count -gt 0) {
             $foreign = @($listeners | Where-Object { $_.Path -ne $service.Exe })
             $state = if ($foreign.Count -gt 0) { 'foreign' } else { 'running' }
-            $addresses = (@($listeners | ForEach-Object { $_.Address }) | Sort-Object -Unique) -join ', '
             $processId = $listeners[0].ProcessId
             $owner = $listeners[0].ProcessName
+
+            $tcpAddresses = @($listeners | ForEach-Object Address | Sort-Object -Unique)
+            $udpEndpoints = @(Get-NetUDPEndpoint -OwningProcess $processId -ErrorAction SilentlyContinue)
+            $udpAddresses = @($udpEndpoints | ForEach-Object LocalAddress | Sort-Object -Unique)
+
+            $tcp = $tcpAddresses -join ', '
+            $udp = if ($udpEndpoints.Count -gt 0) { '{0} ({1})' -f ($udpAddresses -join ', '), $udpEndpoints.Count } else { '-' }
+            $wide = @(@($tcpAddresses) + @($udpAddresses) | Where-Object { $_ -notin $script:Loopback })
+            $exposed = if ($wide.Count -gt 0) { 'yes' } else { 'no' }
         }
 
         [pscustomobject]@{
             Service   = $service.Name
             Ports     = ($service.Ports -join ', ')
             State     = $state
-            Addresses = $addresses
+            Tcp       = $tcp
+            Udp       = $udp
+            Exposed   = $exposed
             ProcessId = $processId
             Owner     = $owner
         }
@@ -131,12 +140,8 @@ function Wait-ForPorts {
     param([int[]]$Ports, [int]$TimeoutSeconds = 20)
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
-        $listening = @()
-        foreach ($port in $Ports) {
-            $listener = Get-PortListener -Port $port
-            if ($listener) { $listening += $listener }
-        }
-        if ($listening.Count -eq $Ports.Count) { return $true }
+        $open = @($Ports | Where-Object { Get-PortListener -Port $_ })
+        if ($open.Count -eq $Ports.Count) { return $true }
         Start-Sleep -Milliseconds 400
     }
     $false

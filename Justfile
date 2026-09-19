@@ -18,3 +18,6 @@ logs service:
 
 restart service:
     Import-Module ./tools/Infra.psm1 -Force; Stop-SiferService -Name {{service}}; Start-SiferService -Name {{service}}
+
+firewall:
+    ./tools/Set-SiferFirewall.ps1

@@ -1,15 +1,40 @@
 # Sifer — Build State
 
-**Last updated:** 17 September 2026
-**Phase:** P0 — Machine Roles, Toolchain, and Native Infrastructure (in progress;
-all five native services running and verified)
+**Last updated:** 19 September 2026 (end of day 3)
+**Phase:** P0 — Machine Roles, Toolchain, and Native Infrastructure
 **Repo:** https://github.com/mentor-sator/Sifer
 **Working directory:** `C:\Users\Novemba\Sifer`
-**Last pushed commit:** `5afd58e` — "P0: LiveKit 1.13.7 on 7880/7881, all five native services verified"
+**Last pushed commit:** "P0: inbound firewall block for Sifer servers, full-exposure status" (day 3; `git log -1` for the hash)
 
 This file is the handover document. Anyone picking up Sifer — a new conversation,
 a new session, a future you — should be able to read this and know exactly where
 the build stands, what was decided and why, and what is blocking.
+
+---
+
+## 0. Day 4 — start here
+
+**Where P0 stands:** the toolchain is installed, secrets and the age identity
+work, all five native services are installed, verified, driven by `just`, and
+blocked from the network by explicit firewall rules. What remains is the
+encrypted dev secrets file, the compose file, the JS/TS tooling and CI — no
+more service installs.
+
+**First three commands of the day**, from `C:\Users\Novemba\Sifer`:
+
+```
+just up
+just status
+git log --oneline -3
+```
+
+Nothing starts on boot by design, so after a restart every service is stopped
+until `just up` runs. `just status` should show five rows, all `running`, with
+`Exposed` = `no` for all except `livekit`, which reads `yes` by design (4.5,
+debt 11) and is covered by its firewall block rule (4.7).
+
+**Then continue with section 9, "Next actions".** Section 7 lists everything
+still open in P0; section 8 lists the debt that is deliberately carried.
 
 ---
 
@@ -26,6 +51,7 @@ One laptop. Every role lives on it.
 | Administrator | Yes |
 | TLS-inspecting proxy | No |
 | Hyper-V | Available (Pro edition) |
+| Network | Wi-Fi `CANALBOX-4C2A-2G`, Windows profile **Public** |
 | Smart App Control | **Off** (registry `VerifiedAndReputablePolicyState = 0`) |
 
 ### Rules for working on this machine
@@ -211,11 +237,14 @@ Binaries live in `%LOCALAPPDATA%\sifer-infra`. Data lives in
 
 | Service | Version | Binaries | Data | Bind | State |
 | --- | --- | --- | --- | --- | --- |
-| PostgreSQL | 16.4 (EDB zip) | `sifer-infra\postgresql-16.4` | `sifer\pgdata` | `127.0.0.1:5433` | **Running, verified** |
-| Redis | 7.4.11 (redis-windows msys2) | `sifer-infra\redis-7.4.11` | `sifer\redis` | `127.0.0.1:6390` | **Running, verified** |
-| Qdrant | 1.12.4 (official Windows zip) | `sifer-infra\qdrant-1.12.4` | `sifer\qdrant` | `127.0.0.1:6333` HTTP, `:6334` gRPC | **Running, verified** |
-| SILO (MinIO fork) | RELEASE.2026-09-16 | `sifer-infra\silo-2026.09.16` | `sifer\silo\data` | `127.0.0.1:9000` S3, `:9001` console | **Running, verified** |
-| LiveKit | 1.13.7 (official Windows zip) | `sifer-infra\livekit-1.13.7` | `sifer\livekit` | `127.0.0.1:7880` signal, `:7881` TCP media | **Running, verified** |
+| PostgreSQL | 16.4 (EDB zip) | `sifer-infra\postgresql-16.4` | `sifer\pgdata` | `127.0.0.1:5433` | **Installed, verified** |
+| Redis | 7.4.11 (redis-windows msys2) | `sifer-infra\redis-7.4.11` | `sifer\redis` | `127.0.0.1:6390` | **Installed, verified** |
+| Qdrant | 1.12.4 (official Windows zip) | `sifer-infra\qdrant-1.12.4` | `sifer\qdrant` | `127.0.0.1:6333` HTTP, `:6334` gRPC | **Installed, verified** |
+| SILO (MinIO fork) | RELEASE.2026-09-16 | `sifer-infra\silo-2026.09.16` | `sifer\silo\data` | `127.0.0.1:9000` S3, `:9001` console (also `::1`) | **Installed, verified** |
+| LiveKit | 1.13.7 (official Windows zip) | `sifer-infra\livekit-1.13.7` | `sifer\livekit` | `127.0.0.1:7880` signal, `:7881` TCP media (also `::`, see debt 11) | **Installed, verified** |
+
+"Installed, verified" means each one was proved working end to end. None of them
+starts on boot: after a restart, `just up`.
 
 Logs: `%LOCALAPPDATA%\sifer\logs\postgres.log`, `%LOCALAPPDATA%\sifer\redis\redis.log`,
 `%LOCALAPPDATA%\sifer\qdrant\stdout.txt`,
@@ -224,8 +253,7 @@ Logs: `%LOCALAPPDATA%\sifer\logs\postgres.log`, `%LOCALAPPDATA%\sifer\redis\redi
 
 Client tool: `mcli` RELEASE.2026-09-16 in `sifer-infra\mcli-2026.09.16`.
 
-**Nothing auto-starts.** After a reboot both must be started again; the
-`Justfile` (`just up`) will own this.
+**Nothing auto-starts.** After a reboot every service is stopped until `just up`.
 
 ### 4.1 PostgreSQL
 
@@ -264,9 +292,7 @@ Client tool: `mcli` RELEASE.2026-09-16 in `sifer-infra\mcli-2026.09.16`.
 - Download verified against SHA-256
   `01d1657465bb2f920ba7f89b50016548e409b59fe4aba6ffdc9a4bc529382801`
   (`qdrant-x86_64-pc-windows-msvc.zip`, single `qdrant.exe`).
-- Committed config: `Justfile
-infra/local/livekit.yaml
-infra/local/qdrant.yaml` — `telemetry_disabled: true`,
+- Committed config: `infra/local/qdrant.yaml` — `telemetry_disabled: true`,
   relative `./storage` and `./snapshots`, `host: 127.0.0.1`, ports 6333/6334,
   CORS off. No personal paths in the file.
 - Start: copy `infra/local/qdrant.yaml` into `%LOCALAPPDATA%\sifer\qdrant`,
@@ -316,9 +342,16 @@ infra/local/qdrant.yaml` — `telemetry_disabled: true`,
 - Verified: `GET /` → 200; `ListRooms` without a token → **401**; with an
   HS256 access token signed by the secret, create → list → delete round trip
   passes.
+- **`bind_addresses` covers signalling only.** Port 7880 binds `127.0.0.1`, but
+  the TCP media port 7881 binds `::` (every address). UDP 50000-50020 opens only
+  while a room is active, so `just status` shows `-` for UDP when idle.
+- **Found on day 3:** Windows held two **Allow inbound** rules for
+  `livekit-server.exe` on the Public profile, created by the first-run firewall
+  prompt. With 7881 on `::`, LiveKit was reachable from the Wi-Fi. Both rules
+  were removed and replaced by a block rule (4.7).
 - **Localhost binding blocks the phone.** Sifer Live (P13) needs the handset to
-  reach this server, so the binding and the UDP range must be reopened then,
-  deliberately and with the firewall rules written down.
+  reach this server. At P13 the LiveKit block rule is replaced by a narrow allow
+  rule (specific ports, local subnet only), written into `Set-SiferFirewall.ps1`.
 
 ### 4.6 Running the stack
 
@@ -330,9 +363,10 @@ is a thin wrapper:
 | --- | --- |
 | `just up` | starts all five in order, skipping any already running |
 | `just down` | stops all five in reverse order |
-| `just status` | table of service, ports, state, bound addresses, PID, owner |
+| `just status` | service, ports, state, every bound TCP address, UDP endpoints, `Exposed` (any non-loopback binding), PID, owner |
 | `just logs <service>` | tail of that service's log and stderr |
 | `just restart <service>` | stop then start one service |
+| `just firewall` | rebuilds the Sifer firewall rules (4.7); self-elevates through UAC |
 
 Rules the module enforces:
 
@@ -360,6 +394,36 @@ Rules the module enforces:
 Verified: `just down` → five stopped; `just up` → five started, all
 `running` on `127.0.0.1`, completing in seconds.
 
+**Day 3 fix:** status previously reported only the first address per port and
+no UDP, so a port bound on both `127.0.0.1` and `::` could look safe.
+`Get-PortListener` now returns every listener, status adds `Udp` and `Exposed`,
+and `Wait-ForPorts` counts ports with a listener rather than listeners (a port
+bound twice would otherwise time out). Verified with `just restart livekit`.
+
+### 4.7 Firewall
+
+`tools/Set-SiferFirewall.ps1`, run with `just firewall`. It self-elevates
+through UAC from a normal shell, so the working rule (never run as
+Administrator) holds. It:
+
+1. removes every firewall rule whose program lives under `sifer-infra`
+   (including any Allow rule a first-run prompt created);
+2. creates one **Inbound / Block / all profiles** rule per server binary —
+   `postgres.exe`, `redis-server.exe`, `qdrant.exe`, `silo.exe`,
+   `livekit-server.exe` — in rule group `Sifer`.
+
+Block rules override allow rules, and Windows Firewall does not filter
+loopback, so every service stays reachable from this laptop and from nothing
+else. Idempotent: safe to re-run. Errors from the elevated process are written
+to `%TEMP%\sifer-firewall-error.txt`.
+
+**Re-run `just firewall` after any upgrade that changes a binary path** (a new
+version directory means the old rules no longer match). If Windows ever shows a
+firewall prompt for a Sifer binary, choose Cancel, then re-run it.
+
+Verified: five `Sifer block inbound …` rules, all enabled, no Allow rules left
+for any `sifer-infra` program.
+
 ---
 
 ## 5. Secrets and identities
@@ -368,8 +432,7 @@ Verified: `just down` → five stopped; `just up` → five started, all
 
 ### 5.1 Credential store module — DONE
 
-`tools/CredentialStore.cs
-tools/Infra.psm1` (P/Invoke to `CredWriteW` / `CredReadW` /
+`tools/CredentialStore.cs` (P/Invoke to `CredWriteW` / `CredReadW` /
 `CredFree`) and `tools/SiferSecrets.psm1` expose:
 
 - `Set-SiferSecret -Name <n> -Value <v>`
@@ -423,8 +486,9 @@ The blueprint's second recipient (verification target) no longer exists.
 
 GitHub account renamed from `ngabonzizacedrickkennedy` to `mentor-sator`
 (September 2026). `origin` is `https://github.com/mentor-sator/Sifer.git`.
-Commits `9f51556`, `78fc84e` and `55e55da` are on `origin/main`. Local repo config pins
-`credential.https://github.com.username` to `mentor-sator`.
+Six commits are on `origin/main`, `9f51556` through `de9353f`. Local repo config
+pins `credential.https://github.com.username` to `mentor-sator`. Pushes
+authenticate through the browser sign-in.
 
 **Still to do:** revoke the expired `ghp_` token that was displayed on screen
 during diagnosis.
@@ -436,8 +500,8 @@ during diagnosis.
 | Item | State |
 | --- | --- |
 | Branch | `main` |
-| Pushed | `5afd58e` |
-| Uncommitted | `Justfile`, `tools/Infra.psm1`, this `STATE.md` update |
+| Pushed | day 3 firewall commit |
+| Uncommitted | nothing |
 | Encoding | All tracked text files UTF-8, no BOM, LF — enforced by `.gitattributes` |
 
 ### Tracked files
@@ -446,14 +510,18 @@ during diagnosis.
 .gitattributes
 .gitignore
 .node-version
+Justfile
 README.md
 STATE.md
+infra/local/livekit.yaml
 infra/local/qdrant.yaml
 infra/local/redis.conf
 pnpm-workspace.yaml
 rust-toolchain.toml
 secrets/recipients.txt
 tools/CredentialStore.cs
+tools/Infra.psm1
+tools/Set-SiferFirewall.ps1
 tools/SiferSecrets.psm1
 ```
 
@@ -473,9 +541,8 @@ apps/  packages/  services/  contracts/  infra/local/  secrets/  tools/
 
 | Item | Blueprint ref | State |
 | --- | --- | --- |
-| Commit `Justfile`, `tools/Infra.psm1` + `STATE.md` | 0B.16 | Next |
-| Confirm LiveKit `::` media port is firewalled | — | Open |
-| Backup age recipient | 0A.6 / 0C.21 | Not started |
+| Confirm LiveKit `::` media port is firewalled | — | **Done** (day 3, 4.7) |
+| Backup age recipient | 0A.6 / 0C.21 | **Next** |
 | `secrets/dev.age` | 0C.21 | Not started |
 | `Justfile` recipes `secrets`, `migrate`, `gen`, `dev`, `seed`, `verify` | 0B.16 | Deferred until they have code to run |
 | `docker-compose.yml` (authored, not run) | 0B.15 | Not started |
@@ -518,20 +585,25 @@ apps/  packages/  services/  contracts/  infra/local/  secrets/  tools/
     with signed checksums, but one maintainer is the risk. Watch for a wider
     community line; S3 keeps the exit cheap.
 11. **LiveKit binds its media port to `::`** (all addresses); `bind_addresses`
-    only covers signalling. Relies on Windows Firewall until checked. Must be
-    settled deliberately at P13 when the phone needs to reach it.
+    only covers signalling. Mitigated by the `Sifer block inbound
+    livekit-server` rule (4.7), verified day 3. Must be settled deliberately at
+    P13, when the phone needs to reach it.
+12. **Network profile is Public.** Correct for safety; noted because P13's
+    allow rule must target the profile in use at that time.
 
 ---
 
 ## 9. Next actions, in order
 
-1. Commit `Justfile`, `tools/Infra.psm1` and `STATE.md`; push.
-2. Confirm the LiveKit `::` media port is blocked by the firewall.
-3. Add the backup age recipient, then create `secrets/dev.age`.
-4. Write `docker-compose.yml` (authored, not run).
-5. Add `turbo.json`, the ESLint flat config, and GitHub Actions.
-6. Close P0 against its definition of done, minus the container half (debt 2).
-7. Revoke the exposed GitHub token; optionally restrict the pre-existing
+1. Add the backup age recipient, then create `secrets/dev.age` holding the
+   connection strings for all five services. Nothing else may hold them.
+2. Write `docker-compose.yml` (authored, never run here), pinned to the same
+   versions as the native stack: PostgreSQL 16.4, Redis 7.4.11, Qdrant 1.12.4,
+   SILO RELEASE.2026-09-16, LiveKit 1.13.7.
+3. Add `turbo.json` and the ESLint 9 flat config with the two custom rules.
+4. Add GitHub Actions.
+5. Close P0 against its definition of done, minus the container half (debt 2).
+6. Revoke the exposed GitHub token; optionally restrict the pre-existing
    5432 PostgreSQL and 6379 Redis to `127.0.0.1`.
 
 ---
