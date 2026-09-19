@@ -4,7 +4,7 @@
 **Phase:** P0 — Machine Roles, Toolchain, and Native Infrastructure
 **Repo:** https://github.com/mentor-sator/Sifer
 **Working directory:** `C:\Users\Novemba\Sifer`
-**Last pushed commit:** "P0: exact devDependency pins; STATE for Node 24, ESLint 10, workspace root" (day 3; `git log -1` for the hash)
+**Last pushed commit:** "P0: STATE — CI green, compose proven on Linux" (day 3; `git log -1` for the hash)
 
 This file is the handover document. Anyone picking up Sifer — a new conversation,
 a new session, a future you — should be able to read this and know exactly where
@@ -20,8 +20,9 @@ blocked from the network by explicit firewall rules. Two age recipients exist
 (workstation + offline backup) and `secrets/dev.age` holds every development
 secret plus the signing certificate. `docker-compose.yml` is authored and
 pinned by digest. The JS workspace root exists: Node 24 LTS, turbo, ESLint 10
-with Sifer's two rules, all tests green. What remains is CI (GitHub Actions)
-and closing P0 against its definition of done.
+with Sifer's two rules, all tests green. GitHub Actions CI is green on every
+push, and it starts the compose stack for real on Linux. What remains is
+closing P0: PgBouncer in compose, `just verify`, `just seed` (section 9).
 
 **First three commands of the day**, from `C:\Users\Novemba\Sifer`:
 
@@ -493,7 +494,7 @@ for any `sifer-infra` program.
 ### 4.8 Container stack — `docker-compose.yml` (authored, not run)
 
 The same five services as containers, for CI and any future Docker host.
-**Never run on this laptop** (debt 2). Project name `sifer`.
+**Never run on this laptop** (debt 2) — **run on every push by CI** (6, CI). Project name `sifer`.
 
 | Service | Image (tag; pinned by digest in the file) | Published on |
 | --- | --- | --- |
@@ -659,6 +660,7 @@ during diagnosis.
 
 ```
 .env.example
+.github/workflows/ci.yml
 .gitattributes
 .gitignore
 .node-version
@@ -693,6 +695,39 @@ turbo.json
 deliberate addition over the blueprint, because session-gateway, action-planner
 and billing are Node packages.
 
+### CI — GitHub Actions
+
+`.github/workflows/ci.yml`, on every push to `main` and every pull request.
+`permissions: contents: read`, no secrets, no deploy (blueprint 0A.7).
+Concurrency cancels superseded runs. Turbo telemetry off.
+
+Every third-party action pinned to a full commit SHA (looked up from the
+official repositories on day 3); the version is in the step name, since the
+code carries no comments:
+
+| Action | Version | Commit |
+| --- | --- | --- |
+| `actions/checkout` | v7.0.1 | `3d3c42e5aac5ba805825da76410c181273ba90b1` |
+| `pnpm/action-setup` | v6.1.0 | `ea17c68df8912ef543352723c149a84f56e3d413` |
+| `actions/setup-node` | v7.0.0 | `820762786026740c76f36085b0efc47a31fe5020` |
+
+Jobs, both on `ubuntu-24.04`:
+
+1. **JavaScript** — pnpm from `packageManager`, Node from `.node-version`,
+   `pnpm install --frozen-lockfile`, then `lint`, `typecheck`, `test`, `build`.
+2. **Container stack** — random throwaway passwords (masked, never stored),
+   `docker compose config`, `docker compose up --wait`, then a smoke test:
+   `pg_isready`, Redis `PING` → `PONG`, Qdrant `/collections` with the API key,
+   SILO `/minio/health/live`, LiveKit `GET /`. Logs on failure; `down
+   --volumes` always.
+
+Verified: run #1 on commit `7854339` — **both jobs green** (JavaScript 19 s,
+Container stack 21 s). Run steps use `bash -e`, so green means every smoke
+command exited 0.
+
+**Push and check CI after every commit** (blueprint 0A.7): it is the only
+place Linux behaviour is observed.
+
 ### Directory skeleton
 
 ```
@@ -709,11 +744,14 @@ apps/  packages/  services/  contracts/  infra/local/  secrets/  tools/
 | Backup age recipient | 0A.6 / 0C.21 | **Done** (day 3, 5.3) |
 | `secrets/dev.age` | 0C.21 | **Done** (day 3, 5.5) |
 | `Justfile` recipe `secrets` | 0B.16 | **Done** (plus `secrets-check`) |
-| `Justfile` recipes `migrate`, `gen`, `dev`, `seed`, `verify` | 0B.16 | Deferred until they have code to run |
+| PgBouncer in `docker-compose.yml` | 0B.15, Traps | **Next** — missing from the file |
+| `Justfile` recipe `verify` | 0B.16 | Not started |
+| `Justfile` recipe `seed` (+ `migrate`) | 0B.16, DoD | Not started |
+| `Justfile` recipes `gen`, `dev` | 0B.16 | Deferred until they have code to run |
 | `docker-compose.yml` (authored, not run) | 0B.15 | **Done** (day 3, 4.8) |
 | `turbo.json` | 0A.3 | **Done** (day 3, 3) |
 | ESLint flat config + 2 custom rules | 0A.10 | **Done** — ESLint 10 (2.11, 3) |
-| GitHub Actions | 0A.7 | **Next** |
+| GitHub Actions | 0A.7 | **Done** (day 3, 6) |
 
 ### Non-negotiables in the remaining work
 
@@ -730,9 +768,11 @@ apps/  packages/  services/  contracts/  infra/local/  secrets/  tools/
 ## 8. Named debt
 
 1. **Local model path unproven.** Text and vision run remote in development.
-2. **Phase-boundary gate cannot run.** No container engine here. `docker-compose.yml`
-   is statically validated only; its first real run (CI or a Docker host) must
-   confirm `LIVEKIT_CONFIG` loading and add silo and livekit healthchecks (4.8).
+2. **No container engine on the workstation.** Partly retired day 3: CI starts
+   `docker-compose.yml` on Linux on every push, and all five services pass the
+   smoke test (6, CI). Still open: no silo or livekit healthcheck in the file
+   (4.8), and the blueprint's full gate (`just secrets` with a second key,
+   `just seed` against the containerised PostgreSQL) is not in CI yet.
 3. **Agency guest shares a host with the workstation.** Violates Document 1
    §3.5.3. Resolve before P9. Isolation conditions when built: no shared folders,
    no drive redirection, no clipboard redirection, no enhanced session mode, a
@@ -765,9 +805,15 @@ apps/  packages/  services/  contracts/  infra/local/  secrets/  tools/
 
 ## 9. Next actions, in order
 
-1. Add GitHub Actions.
-2. Close P0 against its definition of done, minus the container half (debt 2).
-3. Revoke the exposed GitHub token; optionally restrict the pre-existing
+1. **Add PgBouncer to `docker-compose.yml`.** The blueprint lists
+   `edoburu/pgbouncer` in 0B.15 and names skipping it as a trap (four runtimes
+   exhaust PostgreSQL's 100 connections). Pin by tag and digest, `127.0.0.1`
+   only, add it to the CI smoke test.
+2. `just verify`: format, lint, typecheck, test, in that order.
+3. `just seed` (and `just migrate`): drop and rebuild the development database
+   from Atlas migrations in one command.
+4. Close P0 against its definition of done, minus what debt 1, 2 and 3 carry.
+5. Revoke the exposed GitHub token; optionally restrict the pre-existing
    5432 PostgreSQL and 6379 Redis to `127.0.0.1`.
 
 ---
