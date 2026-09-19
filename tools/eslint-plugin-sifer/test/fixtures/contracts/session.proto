@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package sifer.fixture.v1;
+
+message SessionEnvelope {
+  string id = 1;
+}
+
+enum SessionState {
+  SESSION_STATE_UNSPECIFIED = 0;
+}
+
+// message CommentedOut {}
