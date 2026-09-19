@@ -4,7 +4,7 @@
 **Phase:** P0 — Machine Roles, Toolchain, and Native Infrastructure
 **Repo:** https://github.com/mentor-sator/Sifer
 **Working directory:** `C:\Users\Novemba\Sifer`
-**Last pushed commit:** "P0: STATE — compose file recorded" (day 3; `git log -1` for the hash)
+**Last pushed commit:** "P0: exact devDependency pins; STATE for Node 24, ESLint 10, workspace root" (day 3; `git log -1` for the hash)
 
 This file is the handover document. Anyone picking up Sifer — a new conversation,
 a new session, a future you — should be able to read this and know exactly where
@@ -19,8 +19,9 @@ work, all five native services are installed, verified, driven by `just`, and
 blocked from the network by explicit firewall rules. Two age recipients exist
 (workstation + offline backup) and `secrets/dev.age` holds every development
 secret plus the signing certificate. `docker-compose.yml` is authored and
-pinned by digest. What remains is the JS/TS tooling (`turbo.json`, ESLint) and
-CI — no more service installs, no more secrets work, no more infrastructure.
+pinned by digest. The JS workspace root exists: Node 24 LTS, turbo, ESLint 10
+with Sifer's two rules, all tests green. What remains is CI (GitHub Actions)
+and closing P0 against its definition of done.
 
 **First three commands of the day**, from `C:\Users\Novemba\Sifer`:
 
@@ -184,6 +185,22 @@ Alternatives considered and rejected: Garage (no Windows build), SeaweedFS
 building MinIO from frozen source (we would own every future CVE).
 Sifer's code speaks plain S3, so replacing the server later is cheap.
 
+### 2.11 Node 24 LTS and ESLint 10, not Node 22.11 and ESLint 9
+
+Day 3. The blueprint pins Node 22.11 and ESLint 9. Both had to move:
+
+- **ESLint 9 is end-of-life** (pnpm reported it deprecated and unsupported).
+  ESLint 10 is the supported line.
+- **Node 22.11.0 was too old for current typescript-eslint**, whose
+  dependencies require Node `^22.13 || >=24`. `engine-strict` refused the
+  install, as intended.
+- Chosen: **Node 24 LTS** (24.21.0), not a newer 22.x. Node 22 is in
+  maintenance and ends April 2027, mid-build; Node 24 is supported to 2028.
+  Even-numbered, so the §3 rule against odd releases still holds.
+- **Electron is unaffected.** It embeds its own Node, and native modules are
+  built against Electron's headers, not the system Node.
+- **pnpm stays at 9.15.0** for now (debt 13).
+
 ---
 
 ## 3. Toolchain — installed and verified
@@ -194,8 +211,8 @@ is broken (`0x8a15000f`) and not repaired.
 | Tool | Version | Location |
 | --- | --- | --- |
 | Git | 2.55.0.windows.5 | `C:\Program Files\Git` |
-| Node | 22.11.0 | `C:\Users\Novemba\AppData\Local\node` |
-| npm | 11.19.0 | bundled with Node |
+| Node | 24.21.0 | `C:\Users\Novemba\AppData\Local\node` |
+| npm | bundled with Node 24.21.0 | same folder |
 | pnpm | 9.15.0 | `C:\Users\Novemba\AppData\Local\pnpm\pnpm.exe` |
 | Go | 1.25.5 | `C:\Program Files\Go` |
 | Python | 3.12.10 | `C:\Program Files\Python312` |
@@ -210,6 +227,53 @@ is broken (`0x8a15000f`) and not repaired.
 - Go 1.25.5 vs blueprint 1.23.4 — kept; the pin lives in `go.mod`.
 - Python 3.12.10 vs 3.12.7 — kept; `uv` manages its own interpreter.
 - Node 25.2.1 was removed for 22.11.0 (odd-numbered, breaks Electron ABI at P2).
+- Node 22.11.0 replaced by 24.21.0 on day 3 (2.11): official zip, SHA-256
+  checked against nodejs.org `SHASUMS256.txt`, swapped into the same folder so
+  `PATH` did not change. The 22.11.0 folder was deleted after verification.
+
+### JavaScript workspace
+
+Root files: `package.json`, `.npmrc`, `turbo.json`, `eslint.config.mjs`,
+`pnpm-lock.yaml`, `pnpm-workspace.yaml`, `.node-version`.
+
+- `package.json`: private, ESM, `packageManager: pnpm@9.15.0`,
+  `engines` pinned to Node 24.21.0 and pnpm 9.15.0.
+- `.npmrc`: `engine-strict=true` (wrong Node or pnpm refuses to install),
+  `save-exact=true`. **Name exact versions in `pnpm add`** — a range typed on
+  the command line (`eslint@^10`) is kept as a range despite `save-exact`.
+- Scripts: `pnpm build`, `pnpm typecheck`, `pnpm test`, `pnpm lint` run through
+  turbo; `lint` also runs `eslint .` at the root, and `test` also runs the
+  plugin tests with `node --test`.
+- `turbo.json` tasks: `build` (`^build`, outputs `dist/build/out`),
+  `typecheck` (`^build`), `lint`, `test` (`^build`, outputs `coverage`).
+
+| devDependency | Version |
+| --- | --- |
+| turbo | 2.11.2 |
+| eslint | 10.11.0 |
+| @eslint/js | 10.0.1 |
+| typescript-eslint | 8.70.0 |
+| typescript | 5.9.3 |
+| globals | 17.12.0 |
+
+**ESLint** (`eslint.config.mjs`, flat config): `@eslint/js` recommended +
+typescript-eslint recommended, Node globals, generated code (`gen/`,
+`generated/`) and build output ignored. Sifer's two rules (Document 2):
+
+1. **No `socket.io-client` outside `packages/realtime`** — built-in
+   `no-restricted-imports`, switched off for `packages/realtime/**` only.
+2. **`sifer/no-contract-shadow`** — custom rule in
+   `tools/eslint-plugin-sifer/`. Reads every `message` and `enum` name from
+   `.proto` files under `contracts/` (comments stripped) and reports any
+   interface, type alias, enum or class of the same name. Inert while
+   `contracts/` is empty; live from the first `.proto`.
+
+Tests: `tools/eslint-plugin-sifer/test/rules.test.mjs` — 7 RuleTester cases
+against a fixture `.proto`, plus 2 tests that lint through the real config
+(import rejected in `apps/`, allowed in `packages/realtime/`).
+
+Verified day 3: `eslint .` exit 0; `node --test` 9 pass, 0 fail;
+`turbo run lint` runs (0 packages yet).
 
 ### Abandoned
 
@@ -598,13 +662,17 @@ during diagnosis.
 .gitattributes
 .gitignore
 .node-version
+.npmrc
 Justfile
 README.md
 STATE.md
 docker-compose.yml
+eslint.config.mjs
 infra/local/livekit.yaml
 infra/local/qdrant.yaml
 infra/local/redis.conf
+package.json
+pnpm-lock.yaml
 pnpm-workspace.yaml
 rust-toolchain.toml
 secrets/dev.age
@@ -614,6 +682,11 @@ tools/DevSecrets.psm1
 tools/Infra.psm1
 tools/Set-SiferFirewall.ps1
 tools/SiferSecrets.psm1
+tools/eslint-plugin-sifer/index.mjs
+tools/eslint-plugin-sifer/no-contract-shadow.mjs
+tools/eslint-plugin-sifer/test/fixtures/contracts/session.proto
+tools/eslint-plugin-sifer/test/rules.test.mjs
+turbo.json
 ```
 
 `pnpm-workspace.yaml` covers `apps/*`, `packages/*` **and `services/*`** — a
@@ -638,9 +711,9 @@ apps/  packages/  services/  contracts/  infra/local/  secrets/  tools/
 | `Justfile` recipe `secrets` | 0B.16 | **Done** (plus `secrets-check`) |
 | `Justfile` recipes `migrate`, `gen`, `dev`, `seed`, `verify` | 0B.16 | Deferred until they have code to run |
 | `docker-compose.yml` (authored, not run) | 0B.15 | **Done** (day 3, 4.8) |
-| `turbo.json` | 0A.3 | **Next** |
-| ESLint 9 flat config + 2 custom rules | 0A.10 | Not started |
-| GitHub Actions | 0A.7 | Unblocked, not started |
+| `turbo.json` | 0A.3 | **Done** (day 3, 3) |
+| ESLint flat config + 2 custom rules | 0A.10 | **Done** — ESLint 10 (2.11, 3) |
+| GitHub Actions | 0A.7 | **Next** |
 
 ### Non-negotiables in the remaining work
 
@@ -684,15 +757,17 @@ apps/  packages/  services/  contracts/  infra/local/  secrets/  tools/
     P13, when the phone needs to reach it.
 12. **Network profile is Public.** Correct for safety; noted because P13's
     allow rule must target the profile in use at that time.
+13. **pnpm 9.15.0 while 12.x is current.** Kept to avoid unverified behaviour
+    changes mid-P0. Upgrade in its own step: read the 10/11/12 changelogs,
+    regenerate the lockfile, bump `packageManager` and `engines` together.
 
 ---
 
 ## 9. Next actions, in order
 
-1. Add `turbo.json` and the ESLint 9 flat config with the two custom rules.
-2. Add GitHub Actions.
-3. Close P0 against its definition of done, minus the container half (debt 2).
-4. Revoke the exposed GitHub token; optionally restrict the pre-existing
+1. Add GitHub Actions.
+2. Close P0 against its definition of done, minus the container half (debt 2).
+3. Revoke the exposed GitHub token; optionally restrict the pre-existing
    5432 PostgreSQL and 6379 Redis to `127.0.0.1`.
 
 ---
