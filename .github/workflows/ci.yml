@@ -81,6 +81,7 @@ jobs:
           curl --fail --silent --show-error -H "api-key: $QDRANT_API_KEY" http://127.0.0.1:6333/collections
           curl --fail --silent --show-error http://127.0.0.1:9000/minio/health/live
           curl --fail --silent --show-error http://127.0.0.1:7880/
+          docker compose exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" postgres psql -h pgbouncer -p 6432 -U postgres -d postgres -tAc 'select 1' | grep -qx 1
 
       - name: Service logs on failure
         if: failure()
