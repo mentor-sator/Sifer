@@ -4,7 +4,7 @@
 **Phase:** P0 — Machine Roles, Toolchain, and Native Infrastructure
 **Repo:** https://github.com/mentor-sator/Sifer
 **Working directory:** `C:\Users\Novemba\Sifer`
-**Last pushed commit:** "P0: STATE — CI green, compose proven on Linux" (day 3; `git log -1` for the hash)
+**Last pushed commit:** "P0: STATE — PgBouncer and just verify recorded" (day 3; `git log -1` for the hash)
 
 This file is the handover document. Anyone picking up Sifer — a new conversation,
 a new session, a future you — should be able to read this and know exactly where
@@ -22,7 +22,8 @@ secret plus the signing certificate. `docker-compose.yml` is authored and
 pinned by digest. The JS workspace root exists: Node 24 LTS, turbo, ESLint 10
 with Sifer's two rules, all tests green. GitHub Actions CI is green on every
 push, and it starts the compose stack for real on Linux. What remains is
-closing P0: PgBouncer in compose, `just verify`, `just seed` (section 9).
+closing P0: `just seed` and the definition-of-done check (section 9).
+PgBouncer is in compose and `just verify` is the single gate, locally and in CI.
 
 **First three commands of the day**, from `C:\Users\Novemba\Sifer`:
 
@@ -256,6 +257,7 @@ Root files: `package.json`, `.npmrc`, `turbo.json`, `eslint.config.mjs`,
 | typescript-eslint | 8.70.0 |
 | typescript | 5.9.3 |
 | globals | 17.12.0 |
+| prettier | 3.9.8 |
 
 **ESLint** (`eslint.config.mjs`, flat config): `@eslint/js` recommended +
 typescript-eslint recommended, Node globals, generated code (`gen/`,
@@ -275,6 +277,29 @@ against a fixture `.proto`, plus 2 tests that lint through the real config
 
 Verified day 3: `eslint .` exit 0; `node --test` 9 pass, 0 fail;
 `turbo run lint` runs (0 packages yet).
+
+### `just verify` and formatting
+
+The blueprint gate: **format, lint, typecheck, test, in that order, green
+before every commit.** `tools/Verify.ps1` runs the four stages and stops at the
+first failure. `just verify` calls it locally; CI calls the same file with
+`pwsh`, so local green and CI green mean the same thing.
+
+| Stage | Command today |
+| --- | --- |
+| format | `pnpm exec prettier --check .` |
+| lint | `pnpm lint` (turbo + root `eslint .`) |
+| typecheck | `pnpm typecheck` (turbo) |
+| test | `pnpm test` (turbo + plugin tests) |
+
+- **Guard:** if any `Cargo.toml`, `go.mod` or `pyproject.toml` exists (tracked
+  or untracked, not ignored), verify fails and names it, until that runtime's
+  four commands are added to `Verify.ps1`. A new runtime cannot skip the gate.
+- **Prettier 3.9.8**, exact. `.prettierrc.json`: `singleQuote`, `printWidth
+  100`. `.prettierignore`: `pnpm-lock.yaml`, all Markdown (keeps `STATE.md`
+  tables untouched), `secrets/`, the plugin test fixtures.
+- `just fmt` formats in place. Day 3's first `just fmt` rewrote quotes in the
+  YAML and JS files; CI run #4 confirmed compose still works after it.
 
 ### Abandoned
 
@@ -503,6 +528,7 @@ The same five services as containers, for CI and any future Docker host.
 | qdrant | `qdrant/qdrant:v1.12.4` | `127.0.0.1:6333`, `:6334` |
 | silo | `pgsty/silo:RELEASE.2026-09-16T00-00-00Z` (multi-arch, not distroless) | `127.0.0.1:9000`, `:9001` |
 | livekit | `livekit/livekit-server:v1.13.7` | `127.0.0.1:7880`, `:7881`, UDP `50000-50020` |
+| pgbouncer | `edoburu/pgbouncer:v1.25.2-p0` | `127.0.0.1:6432` |
 
 Rules the file follows:
 
@@ -520,6 +546,11 @@ Rules the file follows:
 - LiveKit is configured through `LIVEKIT_CONFIG` (inline YAML: 7880, TCP 7881,
   UDP 50000-50020, `use_external_ip: false`) and `LIVEKIT_KEYS`
   (`sifer-dev: <secret>`), so no second config file is needed.
+- **PgBouncer** (blueprint 0B.15; skipping it is a named trap): transaction
+  pooling, `scram-sha-256` against PostgreSQL's `postgres` user with
+  `POSTGRES_PASSWORD`, listens on 6432, `MAX_CLIENT_CONN 400`,
+  `DEFAULT_POOL_SIZE 20`, starts only after postgres is healthy. Compose-only;
+  the native stack has no pooler, as in the blueprint.
 - Healthchecks on postgres (`pg_isready`), redis (`redis-cli ping`), qdrant
   (TCP probe via bash). **None yet on silo and livekit**: what their images
   contain is unverified, so the check is added on the first real run rather
@@ -665,6 +696,8 @@ during diagnosis.
 .gitignore
 .node-version
 .npmrc
+.prettierignore
+.prettierrc.json
 Justfile
 README.md
 STATE.md
@@ -684,6 +717,7 @@ tools/DevSecrets.psm1
 tools/Infra.psm1
 tools/Set-SiferFirewall.ps1
 tools/SiferSecrets.psm1
+tools/Verify.ps1
 tools/eslint-plugin-sifer/index.mjs
 tools/eslint-plugin-sifer/no-contract-shadow.mjs
 tools/eslint-plugin-sifer/test/fixtures/contracts/session.proto
@@ -714,14 +748,16 @@ code carries no comments:
 Jobs, both on `ubuntu-24.04`:
 
 1. **JavaScript** — pnpm from `packageManager`, Node from `.node-version`,
-   `pnpm install --frozen-lockfile`, then `lint`, `typecheck`, `test`, `build`.
+   `pnpm install --frozen-lockfile`, then `pwsh tools/Verify.ps1` (the same
+   script as `just verify`), then `build`.
 2. **Container stack** — random throwaway passwords (masked, never stored),
    `docker compose config`, `docker compose up --wait`, then a smoke test:
    `pg_isready`, Redis `PING` → `PONG`, Qdrant `/collections` with the API key,
-   SILO `/minio/health/live`, LiveKit `GET /`. Logs on failure; `down
+   SILO `/minio/health/live`, LiveKit `GET /`, and `select 1` through
+   PgBouncer (psql in the postgres container → `pgbouncer:6432`). Logs on failure; `down
    --volumes` always.
 
-Verified: run #1 on commit `7854339` — **both jobs green** (JavaScript 19 s,
+Verified: runs #1–#4 all green (#3 added PgBouncer, #4 switched to Verify.ps1). Run #1 on commit `7854339` — **both jobs green** (JavaScript 19 s,
 Container stack 21 s). Run steps use `bash -e`, so green means every smoke
 command exited 0.
 
@@ -744,9 +780,9 @@ apps/  packages/  services/  contracts/  infra/local/  secrets/  tools/
 | Backup age recipient | 0A.6 / 0C.21 | **Done** (day 3, 5.3) |
 | `secrets/dev.age` | 0C.21 | **Done** (day 3, 5.5) |
 | `Justfile` recipe `secrets` | 0B.16 | **Done** (plus `secrets-check`) |
-| PgBouncer in `docker-compose.yml` | 0B.15, Traps | **Next** — missing from the file |
-| `Justfile` recipe `verify` | 0B.16 | Not started |
-| `Justfile` recipe `seed` (+ `migrate`) | 0B.16, DoD | Not started |
+| PgBouncer in `docker-compose.yml` | 0B.15, Traps | **Done** (day 3, 4.8; CI #3) |
+| `Justfile` recipe `verify` (+ `fmt`) | 0B.16 | **Done** (day 3, 3; CI #4) |
+| `Justfile` recipe `seed` (+ `migrate`) | 0B.16, DoD | **Next** |
 | `Justfile` recipes `gen`, `dev` | 0B.16 | Deferred until they have code to run |
 | `docker-compose.yml` (authored, not run) | 0B.15 | **Done** (day 3, 4.8) |
 | `turbo.json` | 0A.3 | **Done** (day 3, 3) |
@@ -805,15 +841,11 @@ apps/  packages/  services/  contracts/  infra/local/  secrets/  tools/
 
 ## 9. Next actions, in order
 
-1. **Add PgBouncer to `docker-compose.yml`.** The blueprint lists
-   `edoburu/pgbouncer` in 0B.15 and names skipping it as a trap (four runtimes
-   exhaust PostgreSQL's 100 connections). Pin by tag and digest, `127.0.0.1`
-   only, add it to the CI smoke test.
-2. `just verify`: format, lint, typecheck, test, in that order.
-3. `just seed` (and `just migrate`): drop and rebuild the development database
-   from Atlas migrations in one command.
-4. Close P0 against its definition of done, minus what debt 1, 2 and 3 carry.
-5. Revoke the exposed GitHub token; optionally restrict the pre-existing
+1. `just seed` (and `just migrate`): drop and rebuild the development database
+   from Atlas migrations in one command, against the native PostgreSQL on
+   5433; add the same to CI against the containerised PostgreSQL.
+2. Close P0 against its definition of done, minus what debt 1, 2 and 3 carry.
+3. Revoke the exposed GitHub token; optionally restrict the pre-existing
    5432 PostgreSQL and 6379 Redis to `127.0.0.1`.
 
 ---
