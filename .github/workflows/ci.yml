@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  TURBO_TELEMETRY_DISABLED: "1"
+  TURBO_TELEMETRY_DISABLED: '1'
 
 jobs:
   javascript:
@@ -38,14 +38,8 @@ jobs:
       - name: Install (frozen lockfile)
         run: pnpm install --frozen-lockfile
 
-      - name: Lint
-        run: pnpm lint
-
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Test
-        run: pnpm test
+      - name: Verify (format, lint, typecheck, test)
+        run: pwsh -NoProfile -File tools/Verify.ps1
 
       - name: Build
         run: pnpm build

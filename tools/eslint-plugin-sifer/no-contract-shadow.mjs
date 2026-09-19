@@ -51,7 +51,8 @@ export default {
       },
     ],
     messages: {
-      shadow: "'{{name}}' is a contract message. Import the generated type instead of declaring it by hand.",
+      shadow:
+        "'{{name}}' is a contract message. Import the generated type instead of declaring it by hand.",
     },
   },
 

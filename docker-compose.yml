@@ -7,11 +7,11 @@ services:
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     ports:
-      - "127.0.0.1:5432:5432"
+      - '127.0.0.1:5432:5432'
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "postgres"]
+      test: ['CMD', 'pg_isready', '-U', 'postgres']
       interval: 5s
       timeout: 3s
       retries: 20
@@ -21,13 +21,13 @@ services:
     restart: unless-stopped
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
-    command: ["sh", "-c", "exec redis-server --requirepass \"$$REDIS_PASSWORD\" --appendonly yes"]
+    command: ['sh', '-c', 'exec redis-server --requirepass "$$REDIS_PASSWORD" --appendonly yes']
     ports:
-      - "127.0.0.1:6379:6379"
+      - '127.0.0.1:6379:6379'
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      test: ['CMD-SHELL', 'redis-cli --no-auth-warning -a "$$REDIS_PASSWORD" ping | grep -q PONG']
       interval: 5s
       timeout: 3s
       retries: 20
@@ -37,14 +37,14 @@ services:
     restart: unless-stopped
     environment:
       QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?set QDRANT_API_KEY in .env}
-      QDRANT__TELEMETRY_DISABLED: "true"
+      QDRANT__TELEMETRY_DISABLED: 'true'
     ports:
-      - "127.0.0.1:6333:6333"
-      - "127.0.0.1:6334:6334"
+      - '127.0.0.1:6333:6333'
+      - '127.0.0.1:6334:6334'
     volumes:
       - qdrant-data:/qdrant/storage
     healthcheck:
-      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333'"]
+      test: ['CMD-SHELL', "bash -c ':> /dev/tcp/127.0.0.1/6333'"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -52,14 +52,14 @@ services:
   silo:
     image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z@sha256:635197cb9f36d01bee221d34d1c7d7960f6a95c48b0b6c01d99cd13bdae51a46
     restart: unless-stopped
-    command: ["server", "/data", "--console-address", ":9001"]
+    command: ['server', '/data', '--console-address', ':9001']
     environment:
       MINIO_ROOT_USER: sifer-admin
       MINIO_ROOT_PASSWORD: ${SILO_ROOT_PASSWORD:?set SILO_ROOT_PASSWORD in .env}
-      MINIO_UPDATE: "off"
+      MINIO_UPDATE: 'off'
     ports:
-      - "127.0.0.1:9000:9000"
-      - "127.0.0.1:9001:9001"
+      - '127.0.0.1:9000:9000'
+      - '127.0.0.1:9001:9001'
     volumes:
       - silo-data:/data
 
@@ -67,7 +67,7 @@ services:
     image: livekit/livekit-server:v1.13.7@sha256:6fd3b7088874c4d119160dd688798dfec852bc014786d392caad15f6f63912a3
     restart: unless-stopped
     environment:
-      LIVEKIT_KEYS: "sifer-dev: ${LIVEKIT_API_SECRET:?set LIVEKIT_API_SECRET in .env}"
+      LIVEKIT_KEYS: 'sifer-dev: ${LIVEKIT_API_SECRET:?set LIVEKIT_API_SECRET in .env}'
       LIVEKIT_CONFIG: |
         port: 7880
         rtc:
@@ -76,9 +76,9 @@ services:
           port_range_end: 50020
           use_external_ip: false
     ports:
-      - "127.0.0.1:7880:7880"
-      - "127.0.0.1:7881:7881"
-      - "127.0.0.1:50000-50020:50000-50020/udp"
+      - '127.0.0.1:7880:7880'
+      - '127.0.0.1:7881:7881'
+      - '127.0.0.1:50000-50020:50000-50020/udp'
 
   pgbouncer:
     image: edoburu/pgbouncer:v1.25.2-p0@sha256:7d7a27d9e90985cab5cf42256f5c13a3120baa4b055b69df37beb272b89b2340
@@ -88,17 +88,16 @@ services:
         condition: service_healthy
     environment:
       DB_HOST: postgres
-      DB_PORT: "5432"
+      DB_PORT: '5432'
       DB_USER: postgres
       DB_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       AUTH_TYPE: scram-sha-256
       POOL_MODE: transaction
-      LISTEN_PORT: "6432"
-      MAX_CLIENT_CONN: "400"
-      DEFAULT_POOL_SIZE: "20"
+      LISTEN_PORT: '6432'
+      MAX_CLIENT_CONN: '400'
+      DEFAULT_POOL_SIZE: '20'
     ports:
-      - "127.0.0.1:6432:6432"
-
+      - '127.0.0.1:6432:6432'
 
 volumes:
   postgres-data:

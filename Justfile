@@ -27,3 +27,9 @@ secrets:
 
 secrets-check:
     Import-Module ./tools/DevSecrets.psm1 -Force; Test-SiferDevSecrets
+
+verify:
+    ./tools/Verify.ps1
+
+fmt:
+    pnpm exec prettier --write .

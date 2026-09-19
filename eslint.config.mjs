@@ -4,7 +4,8 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 import sifer from './tools/eslint-plugin-sifer/index.mjs';
 
-const socketIoMessage = 'socket.io-client is imported only inside packages/realtime. Use @sifer/realtime.';
+const socketIoMessage =
+  'socket.io-client is imported only inside packages/realtime. Use @sifer/realtime.';
 
 export default defineConfig([
   globalIgnores([

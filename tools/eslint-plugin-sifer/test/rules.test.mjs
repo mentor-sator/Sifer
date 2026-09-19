@@ -23,7 +23,10 @@ ruleTester.run('no-contract-shadow', rule, {
   valid: [
     { code: 'interface LocalShape { id: string }', options },
     { code: 'type CommentedOut = number;', options },
-    { code: 'type SessionEnvelope = number;', options: [{ contractsDir: join(here, 'fixtures', 'missing') }] },
+    {
+      code: 'type SessionEnvelope = number;',
+      options: [{ contractsDir: join(here, 'fixtures', 'missing') }],
+    },
   ],
   invalid: [
     {
@@ -64,6 +67,9 @@ describe('socket.io-client boundary', () => {
     const [result] = await eslint.lintText(code, {
       filePath: join(root, 'packages', 'realtime', 'src', 'socket.ts'),
     });
-    assert.equal(result.messages.filter((message) => message.ruleId === 'no-restricted-imports').length, 0);
+    assert.equal(
+      result.messages.filter((message) => message.ruleId === 'no-restricted-imports').length,
+      0,
+    );
   });
 });
