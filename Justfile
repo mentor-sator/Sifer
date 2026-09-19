@@ -21,3 +21,9 @@ restart service:
 
 firewall:
     ./tools/Set-SiferFirewall.ps1
+
+secrets:
+    Import-Module ./tools/DevSecrets.psm1 -Force; New-SiferDevSecrets
+
+secrets-check:
+    Import-Module ./tools/DevSecrets.psm1 -Force; Test-SiferDevSecrets
