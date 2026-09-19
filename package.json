@@ -14,11 +14,11 @@
     "test": "turbo run test && node --test \"tools/eslint-plugin-sifer/test/*.test.mjs\""
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
-    "eslint": "^10.11.0",
+    "@eslint/js": "10.0.1",
+    "eslint": "10.11.0",
     "globals": "17.12.0",
-    "turbo": "^2.11.2",
-    "typescript": "^5.9.3",
-    "typescript-eslint": "^8.70.0"
+    "turbo": "2.11.2",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.70.0"
   }
 }
