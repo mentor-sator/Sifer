@@ -77,6 +77,28 @@ jobs:
           curl --fail --silent --show-error http://127.0.0.1:7880/
           docker compose exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" postgres psql -h pgbouncer -p 6432 -U postgres -d postgres -tAc 'select 1' | grep -qx 1
 
+      - name: Atlas CLI (arigaio/atlas , pinned by digest)
+        run: |
+          sudo tee /usr/local/bin/atlas > /dev/null <<'EOF'
+          #!/bin/sh
+          exec docker run --rm --network host -v "$PWD:/work" -w /work arigaio/atlas:@sha256:7d7a27d9e90985cab5cf42256f5c13a3120baa4b055b69df37beb272b89b2340 "$@"
+          EOF
+          sudo chmod +x /usr/local/bin/atlas
+          atlas version
+
+      - name: Seed against containerised PostgreSQL
+        shell: pwsh
+        run: |
+          Import-Module ./tools/Database.psm1 -Force
+          $target = Get-SiferDbTarget -Port 5432 -Password $env:POSTGRES_PASSWORD
+          Reset-SiferDatabase -Target $target
+          $schemas = @(Get-SiferDbSchemas -Target $target)
+          $expected = @(Get-ChildItem db/migrations -Directory | ForEach-Object Name)
+          $missing = @($expected | Where-Object { $_ -notin $schemas })
+          if ($missing.Count -gt 0) { throw "Schemas missing after seed: $($missing -join ', ')" }
+          "schemas present: $($expected -join ', ')"
+          Invoke-SiferMigrate -Target $target
+          Reset-SiferDatabase -Target $target
       - name: Service logs on failure
         if: failure()
         run: docker compose logs --no-color
