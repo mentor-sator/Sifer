@@ -1,10 +1,10 @@
 # Sifer — Build State
 
-**Last updated:** 19 September 2026 (end of day 3)
-**Phase:** P0 — Machine Roles, Toolchain, and Native Infrastructure
+**Last updated:** 20 September 2026 (P0 closed)
+**Phase:** P0 — **closed**. Next: P1 — Contracts, Gateway, and the Trace Spine
 **Repo:** https://github.com/mentor-sator/Sifer
 **Working directory:** `C:\Users\Novemba\Sifer`
-**Last pushed commit:** "P0: STATE — PgBouncer and just verify recorded" (day 3; `git log -1` for the hash)
+**Last pushed commit:** "P0: closed — final STATE" (`git log -1` for the hash)
 
 This file is the handover document. Anyone picking up Sifer — a new conversation,
 a new session, a future you — should be able to read this and know exactly where
@@ -12,34 +12,33 @@ the build stands, what was decided and why, and what is blocking.
 
 ---
 
-## 0. Day 4 — start here
+## 0. P1 — start here
 
-**Where P0 stands:** the toolchain is installed, secrets and the age identity
-work, all five native services are installed, verified, driven by `just`, and
-blocked from the network by explicit firewall rules. Two age recipients exist
-(workstation + offline backup) and `secrets/dev.age` holds every development
-secret plus the signing certificate. `docker-compose.yml` is authored and
-pinned by digest. The JS workspace root exists: Node 24 LTS, turbo, ESLint 10
-with Sifer's two rules, all tests green. GitHub Actions CI is green on every
-push, and it starts the compose stack for real on Linux. What remains is
-closing P0: `just seed` and the definition-of-done check (section 9).
-PgBouncer is in compose and `just verify` is the single gate, locally and in CI.
+**P0 is closed.** Every line of its definition of done is either proven or
+carried as named debt with a reason (section 7). In short: five native services
+on loopback driven by `just`, firewalled; secrets in the credential store and
+in `secrets/dev.age` (two age recipients); JS workspace (Node 24, turbo,
+ESLint 10 + Sifer rules, Prettier); `just verify` as the single gate; Atlas
+migration skeleton with `just seed` / `just migrate`; and CI that runs verify,
+starts the full compose stack (six services incl. PgBouncer), smoke-tests it,
+and seeds the containerised PostgreSQL on every push.
 
-**First three commands of the day**, from `C:\Users\Novemba\Sifer`:
+**First commands of the day**, from `C:\Users\Novemba\Sifer`:
 
 ```
 just up
 just status
+just verify
 git log --oneline -3
 ```
 
-Nothing starts on boot by design, so after a restart every service is stopped
-until `just up` runs. `just status` should show five rows, all `running`, with
-`Exposed` = `no` for all except `livekit`, which reads `yes` by design (4.5,
-debt 11) and is covered by its firewall block rule (4.7).
+`just status` shows five rows, all `running`, `Exposed` = `no` except
+`livekit` (`yes` by design, blocked by its firewall rule — 4.5, 4.7, debt 11).
+Nothing starts on boot.
 
-**Then continue with section 9, "Next actions".** Section 7 lists everything
-still open in P0; section 8 lists the debt that is deliberately carried.
+**Then section 9.** P1's goal (blueprint): a typed request travels from a
+terminal through the Go gateway into a Python service and back, carrying one
+trace id visible in Grafana.
 
 ---
 
@@ -116,10 +115,24 @@ and a build, and runs at a few tokens per second on UHD 620. **Both text and
 vision engine rows point at a remote OpenAI-compatible endpoint during
 development.** Local models become fallback rows. Carried as debt.
 
-### 2.4 No Docker Desktop
+### 2.4 Docker Desktop is present; Sifer's compose stack does not run here
 
-Disk decides this. `docker-compose.yml` is still authored, pinned to the same
-versions as the native stack, and never run here. Carried as debt.
+Found at P0 close: Docker Desktop is installed per-user
+(`%LOCALAPPDATA%\Programs\DockerDesktop`), pre-existing and kept by the owner.
+The blueprint's DoD line "`docker --version` fails on the workstation" is
+therefore not met, by decision.
+
+Rules:
+
+- **Sifer's `docker-compose.yml` is never started on this laptop.** Its
+  published ports (5432, 6379) collide with the pre-existing PostgreSQL and
+  Redis (section 1), and 7.8 GB RAM cannot hold both stacks. **CI is the
+  phase-boundary gate** (6, CI).
+- Docker **may** be used for tooling containers that do not duplicate the
+  native stack — first candidate: P1's local observability stack
+  (OpenTelemetry collector, Grafana, Tempo, Prometheus, Loki), on ports that
+  collide with nothing, started only when needed.
+- Native services stay the development runtime.
 
 ### 2.5 Smart App Control off
 
@@ -220,7 +233,7 @@ is broken (`0x8a15000f`) and not repaired.
 | Python | 3.12.10 | `C:\Program Files\Python312` |
 | Rust / cargo | 1.82.0 | `%USERPROFILE%\.cargo\bin` |
 | buf | 1.47.2 | `%LOCALAPPDATA%\sifer-bin` |
-| atlas | v1.3.4 | `%LOCALAPPDATA%\sifer-bin` |
+| atlas | v1.3.3 | `%LOCALAPPDATA%\sifer-bin` |
 | just | 1.36.0 | `%LOCALAPPDATA%\sifer-bin` |
 | age / age-keygen | 1.2.1 | `%LOCALAPPDATA%\sifer-bin` |
 
@@ -232,6 +245,12 @@ is broken (`0x8a15000f`) and not repaired.
 - Node 22.11.0 replaced by 24.21.0 on day 3 (2.11): official zip, SHA-256
   checked against nodejs.org `SHASUMS256.txt`, swapped into the same folder so
   `PATH` did not change. The 22.11.0 folder was deleted after verification.
+- Atlas: the day-1 binary was `v1.3.4-1906880-canary`, a pre-release with no
+  matching Docker image. Replaced day 3 by the official **v1.3.3** release
+  (`release.ariga.io`, SHA-256 checked, signed with the Sifer certificate).
+  CI uses `arigaio/atlas:1.3.3` pinned by digest — same version both sides.
+- **Downloads: use `curl.exe` with retries**, not `Invoke-WebRequest` — the
+  latter dropped the 123 MB Atlas download mid-transfer.
 
 ### JavaScript workspace
 
@@ -516,7 +535,7 @@ firewall prompt for a Sifer binary, choose Cancel, then re-run it.
 Verified: five `Sifer block inbound …` rules, all enabled, no Allow rules left
 for any `sifer-infra` program.
 
-### 4.8 Container stack — `docker-compose.yml` (authored, not run)
+### 4.8 Container stack — `docker-compose.yml` (run in CI, never here)
 
 The same five services as containers, for CI and any future Docker host.
 **Never run on this laptop** (debt 2) — **run on every push by CI** (6, CI). Project name `sifer`.
@@ -565,6 +584,34 @@ above.
 the registry API (the day-3 lookup, repeated), and bump the native install to
 the same version in the same commit — native and compose never drift.
 
+### 4.9 Database migrations, `just seed`, `just migrate`
+
+`db/migrations/<schema>/` for the eight blueprint schemas — `agency`,
+`audit`, `billing`, `capture`, `identity`, `live`, `memory`, `project`. Each
+folder is its own Atlas history (created with `atlas migrate new`, hashed with
+`atlas migrate hash`) whose first migration is `CREATE SCHEMA <name>;`.
+
+`tools/Database.psm1`:
+
+| Command | Does |
+| --- | --- |
+| `just seed` | `DROP DATABASE sifer WITH (FORCE)`, `CREATE DATABASE sifer`, apply every folder in name order, then `db/fixtures/*.sql` in name order (none yet) |
+| `just migrate` | apply pending migrations only |
+
+- Target: native PostgreSQL `127.0.0.1:5433`, user `postgres`, database
+  `sifer`, password from the credential store. `Get-SiferDbTarget` takes
+  explicit parameters instead, which is how CI points it at the container.
+- Atlas: `migrate apply --dir file://db/migrations/<name> --revisions-schema
+  atlas_<name> --allow-dirty`. One revisions schema per folder keeps the eight
+  histories separate; `--allow-dirty` lets folder 2+ apply into a database
+  folder 1 already touched.
+- Errors name the tool and exit code only — never the command line, which
+  holds the connection string.
+- Result: 17 schemas (8 + 8 `atlas_*` + `public`). Re-running `just migrate`
+  reports nothing to apply; `just seed` repeats cleanly.
+- **New migration:** `atlas migrate new <name> --dir file://db/migrations/<schema>`,
+  write the SQL, `atlas migrate hash --dir …`, then `just seed`.
+
 ---
 
 ## 5. Secrets and identities
@@ -609,7 +656,10 @@ Load with `Import-Module .\tools\SiferSecrets.psm1 -Force` from the repo root.
 | PFX password | Random 64 hex, in `sifer/signing/pfx-password` and in `secrets/dev.age`. Nobody needs to remember it. |
 | PFX encryption | `AES256_SHA256` (re-exported day 3) |
 
-Signed and `Valid`: `age.exe`, `age-keygen.exe`, `atlas.exe`, `buf.exe`, `just.exe`.
+Signed and `Valid`: `age.exe`, `age-keygen.exe`, `atlas.exe` (re-signed at v1.3.3), `buf.exe`, `just.exe`.
+P0 DoD check (day 3): a throwaway copy of `just.exe` signed → `Valid` via
+`Get-AuthenticodeSignature` (same WinVerifyTrust check as `signtool verify`;
+`signtool` is not installed).
 
 ### 5.3 age identity — DONE
 
@@ -683,7 +733,7 @@ during diagnosis.
 | Item | State |
 | --- | --- |
 | Branch | `main` |
-| Pushed | day 3 STATE commit (compose recorded) |
+| Pushed | P0 closing commit |
 | Uncommitted | nothing |
 | Encoding | All tracked text files UTF-8, no BOM, LF — enforced by `.gitattributes` |
 
@@ -692,6 +742,7 @@ during diagnosis.
 ```
 .env.example
 .github/workflows/ci.yml
+db/migrations/<8 schemas>/<timestamp>_init.sql, atlas.sum
 .gitattributes
 .gitignore
 .node-version
@@ -716,6 +767,7 @@ tools/CredentialStore.cs
 tools/DevSecrets.psm1
 tools/Infra.psm1
 tools/Set-SiferFirewall.ps1
+tools/Database.psm1
 tools/SiferSecrets.psm1
 tools/Verify.ps1
 tools/eslint-plugin-sifer/index.mjs
@@ -755,9 +807,17 @@ Jobs, both on `ubuntu-24.04`:
    `pg_isready`, Redis `PING` → `PONG`, Qdrant `/collections` with the API key,
    SILO `/minio/health/live`, LiveKit `GET /`, and `select 1` through
    PgBouncer (psql in the postgres container → `pgbouncer:6432`). Logs on failure; `down
+   Then Atlas (`arigaio/atlas:1.3.3` pinned by digest, run through a small
+   `/usr/local/bin/atlas` wrapper) and **the same `Database.psm1`** seed the
+   containerised PostgreSQL: seed → every migration folder present as a
+   schema → migrate (nothing pending) → seed again. This is the blueprint's
+   gate "`just seed` builds the identical schema against the containerised
+   PostgreSQL".
    --volumes` always.
 
-Verified: runs #1–#4 all green (#3 added PgBouncer, #4 switched to Verify.ps1). Run #1 on commit `7854339` — **both jobs green** (JavaScript 19 s,
+Verified: runs #1–#4 green (#3 added PgBouncer, #4 switched to Verify.ps1);
+#7 red (Atlas image pinned with an empty tag — see 10), #8 green with
+Atlas 1.3.3 and the seed step. Run #1 on commit `7854339` — **both jobs green** (JavaScript 19 s,
 Container stack 21 s). Run steps use `bash -e`, so green means every smoke
 command exited 0.
 
@@ -772,43 +832,45 @@ apps/  packages/  services/  contracts/  infra/local/  secrets/  tools/
 
 ---
 
-## 7. Remaining P0 work
+## 7. P0 definition of done — closed
 
-| Item | Blueprint ref | State |
+| DoD line (blueprint P0) | Status | Evidence |
 | --- | --- | --- |
-| Confirm LiveKit `::` media port is firewalled | — | **Done** (day 3, 4.7) |
-| Backup age recipient | 0A.6 / 0C.21 | **Done** (day 3, 5.3) |
-| `secrets/dev.age` | 0C.21 | **Done** (day 3, 5.5) |
-| `Justfile` recipe `secrets` | 0B.16 | **Done** (plus `secrets-check`) |
-| PgBouncer in `docker-compose.yml` | 0B.15, Traps | **Done** (day 3, 4.8; CI #3) |
-| `Justfile` recipe `verify` (+ `fmt`) | 0B.16 | **Done** (day 3, 3; CI #4) |
-| `Justfile` recipe `seed` (+ `migrate`) | 0B.16, DoD | **Next** |
-| `Justfile` recipes `gen`, `dev` | 0B.16 | Deferred until they have code to run |
-| `docker-compose.yml` (authored, not run) | 0B.15 | **Done** (day 3, 4.8) |
-| `turbo.json` | 0A.3 | **Done** (day 3, 3) |
-| ESLint flat config + 2 custom rules | 0A.10 | **Done** — ESLint 10 (2.11, 3) |
-| GitHub Actions | 0A.7 | **Done** (day 3, 6) |
+| `just up` starts the five native services; none on `0.0.0.0` | **Met** | `just status` five `running`; 0 listeners on `0.0.0.0` for Sifer ports (day 3). LiveKit TCP 7881 on `::` is firewalled (4.7, debt 11) |
+| `select version()` → PostgreSQL 16.4 | **Met** | `PostgreSQL 16.4, compiled by Visual C++ build 1940, 64-bit` |
+| Redis `XADD` + `XREADGROUP` on a consumer group | **Met** | 4.2 |
+| `just seed` drops and rebuilds the schema in one command | **Met** | 4.9 |
+| `ollama list` shows `qwen2.5:7b` | **Not applicable** | No local model on this hardware (2.3, debt 1) |
+| `docker --version` fails on the workstation | **Not met, by decision** | Docker Desktop kept; Sifer compose never runs here (2.4) |
+| Second key decrypts `secrets/dev.age` | **Met, adapted** | No second machine; the backup identity decrypts (5.3) and `dev.age` has 2 recipients |
+| `docker compose up` → all containers healthy | **Met in CI** | Six services up with `--wait`, smoke test green every push (6, CI) |
+| `free -h` in WSL2 shows the memory cap | **Not applicable** | No verification-target VM (2.1) |
+| `just seed` against the containerised PostgreSQL | **Met in CI** | Seed step, run #8 onward |
+| `buf --version` ≥ 1.47 | **Met** | 1.47.2 |
+| Signing identity verifies a throwaway binary | **Met** | 5.2 |
+| `cargo build --release` with Ollama loaded, watch memory | **Not applicable** | No Ollama (debt 1) |
 
-### Non-negotiables in the remaining work
+Also delivered in P0 beyond the DoD: firewall rules (4.7), `just status`
+exposure reporting, PgBouncer in compose, Prettier + `just verify`, CI.
+
+### Non-negotiables carried into every phase
 
 - Data directories stay outside the repo tree.
-- Every service bound to `127.0.0.1`, verified with netstat **and** PID ownership.
-- `just up` must check each port's owner before starting, and fail loudly on a clash.
+- Every service bound to `127.0.0.1`, verified with `just status`.
+- `just up` checks each port's owner before starting and fails loudly on a clash.
 - `just seed` rebuilds the database from migrations and fixtures in one command.
-- `just verify` runs format, lint, typecheck, test across all four runtimes, in
-  that order, green before every commit.
-- Pin every version; native and compose versions never drift.
+- `just verify` green before every commit; CI green after every push.
+- Pin every version, native and container alike; they never drift.
 
 ---
 
 ## 8. Named debt
 
 1. **Local model path unproven.** Text and vision run remote in development.
-2. **No container engine on the workstation.** Partly retired day 3: CI starts
-   `docker-compose.yml` on Linux on every push, and all five services pass the
-   smoke test (6, CI). Still open: no silo or livekit healthcheck in the file
-   (4.8), and the blueprint's full gate (`just secrets` with a second key,
-   `just seed` against the containerised PostgreSQL) is not in CI yet.
+2. **Phase-boundary gate runs in CI, not on a second machine.** CI starts
+   the compose stack, smoke-tests it and seeds it on every push. Still open:
+   no silo or livekit healthcheck in the compose file (4.8), and CI never
+   decrypts `dev.age` (by design — CI holds no key).
 3. **Agency guest shares a host with the workstation.** Violates Document 1
    §3.5.3. Resolve before P9. Isolation conditions when built: no shared folders,
    no drive redirection, no clipboard redirection, no enhanced session mode, a
@@ -841,12 +903,18 @@ apps/  packages/  services/  contracts/  infra/local/  secrets/  tools/
 
 ## 9. Next actions, in order
 
-1. `just seed` (and `just migrate`): drop and rebuild the development database
-   from Atlas migrations in one command, against the native PostgreSQL on
-   5433; add the same to CI against the containerised PostgreSQL.
-2. Close P0 against its definition of done, minus what debt 1, 2 and 3 carry.
-3. Revoke the exposed GitHub token; optionally restrict the pre-existing
-   5432 PostgreSQL and 6379 Redis to `127.0.0.1`.
+1. **Revoke leftover GitHub tokens** at https://github.com/settings/tokens
+   (the expired `ghp_` token once shown on screen, and anything unrecognised).
+2. **Start P1 — Contracts, Gateway, and the Trace Spine.** First step, blueprint
+   P1.1–P1.3: `contracts/sifer/v1/` (`envelope.proto`, `interaction.proto`,
+   `session.proto`, `common.proto`; `Envelope.schema_major` is field 1),
+   `buf.yaml` + `buf.gen.yaml`, `buf generate`, and a CI job for `buf lint`,
+   `buf breaking` and a clean tree after regeneration. The ESLint rule
+   `sifer/no-contract-shadow` goes live with the first `.proto`.
+3. P1 brings Go and Python code: `tools/Verify.ps1` will fail until their
+   format, lint, typecheck and test commands are added (3, the guard).
+4. Optional hygiene: restrict the pre-existing 5432 PostgreSQL and 6379 Redis
+   to `127.0.0.1`.
 
 ---
 
@@ -857,3 +925,10 @@ apps/  packages/  services/  contracts/  infra/local/  secrets/  tools/
 - Two or three steps at a time, then verify with a screenshot before moving on.
 - Files are written by PowerShell as UTF-8 without BOM, LF line endings.
 - Deliverables stay scoped to what was asked.
+- **Every multi-line PowerShell block is wrapped in `& { … }`** with
+  `$ErrorActionPreference = 'Stop'`. Pasted line by line, a `throw` only stops
+  its own line and the rest runs anyway — that is how CI run #7 got an Atlas
+  image with an empty tag and PgBouncer's digest.
+- `pnpm add` with exact versions (`pkg@1.2.3`), never ranges.
+- Downloads through `curl.exe` with retries; verify every checksum.
+- Screenshots never include a passphrase line.
