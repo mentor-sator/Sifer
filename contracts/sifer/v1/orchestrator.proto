@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package sifer.v1;
+
+import "sifer/v1/envelope.proto";
+
+service OrchestratorService {
+  rpc Echo(EchoRequest) returns (EchoResponse);
+}
+
+message EchoRequest {
+  Envelope envelope = 1;
+}
+
+message EchoResponse {
+  Envelope envelope = 1;
+}

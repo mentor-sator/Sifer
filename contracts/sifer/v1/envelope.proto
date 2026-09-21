@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package sifer.v1;
+
+import "google/protobuf/timestamp.proto";
+import "sifer/v1/interaction.proto";
+import "sifer/v1/session.proto";
+
+message Envelope {
+  uint32 schema_major = 1;
+  string trace_id = 2;
+  string session_id = 3;
+  uint64 seq = 4;
+  google.protobuf.Timestamp emitted_at = 5;
+
+  oneof payload {
+    DropContext drop_context = 10;
+    Instruction instruction = 11;
+    FixPlan fix_plan = 12;
+    ActionPlan action_plan = 13;
+    ActionResult action_result = 14;
+    ScreenSnapshot screen_snapshot = 15;
+    StepChange step_change = 16;
+    OverlayCommand overlay_command = 17;
+    SpeechChunk speech_chunk = 18;
+    SessionControl session_control = 19;
+    ConfirmRequest confirm_request = 20;
+    AuthorityRequest authority_request = 21;
+    ConsultRequest consult_request = 22;
+    DiagnosticDelta diagnostic_delta = 23;
+  }
+}
