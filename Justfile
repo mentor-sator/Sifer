@@ -43,6 +43,12 @@ gateway:
 orchestrator:
     uv run --locked --all-packages sifer-orchestrator
 
+obs-up:
+    docker compose -f infra/observability/compose.yml up --detach --wait --wait-timeout 300
+
+obs-down:
+    docker compose -f infra/observability/compose.yml down
+
 seed:
     Import-Module ./tools/Database.psm1 -Force; Reset-SiferDatabase -Target (Get-SiferDbTarget)
 
