@@ -10,17 +10,19 @@ try {
     }
 
     $stages = [ordered]@{
-        format    = { pnpm exec prettier --check . }
-        lint      = { pnpm lint }
-        typecheck = { pnpm typecheck }
-        test      = { pnpm test }
+        format    = @({ pnpm exec prettier --check . }, { buf format --diff --exit-code })
+        lint      = @({ pnpm lint }, { buf lint }, { buf breaking --against '.git#ref=HEAD' })
+        typecheck = @({ pnpm typecheck })
+        test      = @({ pnpm test })
     }
 
     foreach ($name in $stages.Keys) {
         Write-Host "==> $name" -ForegroundColor Cyan
-        & $stages[$name]
-        if ($LASTEXITCODE -ne 0) {
-            throw "verify failed at '$name' (exit $LASTEXITCODE)."
+        foreach ($step in $stages[$name]) {
+            & $step
+            if ($LASTEXITCODE -ne 0) {
+                throw "verify failed at '$name' (exit $LASTEXITCODE)."
+            }
         }
     }
 
