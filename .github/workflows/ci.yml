@@ -85,6 +85,52 @@ jobs:
       - name: Build
         run: pnpm build
 
+  images:
+    name: Container images (build, non-root, echo through both)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: actions/checkout v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Build edge-gateway
+        run: docker build --file services/edge-gateway/Dockerfile --tag sifer/edge-gateway:ci .
+
+      - name: Build orchestrator
+        run: docker build --file services/orchestrator/Dockerfile --tag sifer/orchestrator:ci .
+
+      - name: Images run as non-root
+        run: |
+          for image in sifer/edge-gateway:ci sifer/orchestrator:ci; do
+            user="$(docker image inspect --format '{{.Config.User}}' "$image")"
+            echo "$image runs as '$user'"
+            case "$user" in ''|root|0|0:0|root:root) exit 1 ;; esac
+          done
+
+      - name: Echo through both containers
+        run: |
+          docker network create sifer-p1
+          docker run --detach --name orchestrator --network sifer-p1 -e SIFER_ORCHESTRATOR_ADDR=0.0.0.0:8083 sifer/orchestrator:ci
+          docker run --detach --name gateway --network sifer-p1 --publish 127.0.0.1:8080:8080 -e SIFER_GATEWAY_ADDR=0.0.0.0:8080 -e SIFER_ORCHESTRATOR_ADDR=orchestrator:8083 sifer/edge-gateway:ci
+          status=0
+          for attempt in $(seq 1 30); do
+            status="$(curl --silent --output /tmp/ok.json --write-out '%{http_code}' -X POST http://127.0.0.1:8080/v1/echo -d '{"schemaMajor":1}' || true)"
+            [ "$status" = 200 ] && break
+            sleep 1
+          done
+          echo "schemaMajor 1 -> $status $(cat /tmp/ok.json)"
+          [ "$status" = 200 ]
+          status="$(curl --silent --output /tmp/stale.json --write-out '%{http_code}' -X POST http://127.0.0.1:8080/v1/echo -d '{"schemaMajor":2}')"
+          echo "schemaMajor 2 -> $status $(cat /tmp/stale.json)"
+          [ "$status" = 409 ]
+
+      - name: Container logs on failure
+        if: failure()
+        run: |
+          docker logs orchestrator || true
+          docker logs gateway || true
   compose:
     name: Container stack (docker-compose.yml)
     runs-on: ubuntu-24.04
