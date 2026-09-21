@@ -234,6 +234,8 @@ jobs:
               "refused: [$database] $sql"
             }
           }
+          'sifer_identity confinement: ok'
+          exit 0
 
       - name: Service logs on failure
         if: failure()
