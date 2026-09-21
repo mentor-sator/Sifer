@@ -4,6 +4,7 @@ ENV CGO_ENABLED=0 GOTOOLCHAIN=local GOFLAGS=-trimpath
 COPY go.mod go.sum ./
 RUN go mod download
 COPY gen/go gen/go
+COPY internal internal
 COPY services/edge-gateway services/edge-gateway
 RUN go build -ldflags="-s -w" -o /out/edge-gateway ./services/edge-gateway
 

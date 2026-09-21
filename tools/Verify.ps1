@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 function Assert-GoFormatted {
     $name = if ($env:OS -eq 'Windows_NT') { 'gofmt.exe' } else { 'gofmt' }
     $gofmt = Join-Path (Join-Path (go env GOROOT) 'bin') $name
-    $unformatted = @(& $gofmt -l gen/go services)
+    $unformatted = @(& $gofmt -l gen/go internal services)
     if ($LASTEXITCODE -ne 0) {
         throw "gofmt failed (exit $LASTEXITCODE)."
     }
@@ -28,7 +28,7 @@ try {
         throw "verify has no stages yet for: $($unwired -join ', '). Add that runtime's format, lint, typecheck and test commands to tools/Verify.ps1."
     }
 
-    $goPackages = @('./gen/...', './services/...')
+    $goPackages = @('./gen/...', './internal/...', './services/...')
     $uvRun = @('run', '--locked', '--all-packages')
 
     $stages = [ordered]@{

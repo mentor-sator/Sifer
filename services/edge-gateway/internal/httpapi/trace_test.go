@@ -15,7 +15,7 @@ import (
 	"google.golang.org/grpc"
 
 	siferv1 "github.com/mentor-sator/Sifer/gen/go/sifer/v1"
-	"github.com/mentor-sator/Sifer/services/edge-gateway/internal/telemetry"
+	"github.com/mentor-sator/Sifer/internal/telemetry"
 )
 
 var spans = tracetest.NewSpanRecorder()

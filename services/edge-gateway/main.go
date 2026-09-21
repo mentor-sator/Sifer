@@ -17,11 +17,11 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	siferv1 "github.com/mentor-sator/Sifer/gen/go/sifer/v1"
+	"github.com/mentor-sator/Sifer/internal/probe"
+	"github.com/mentor-sator/Sifer/internal/telemetry"
 	"github.com/mentor-sator/Sifer/services/edge-gateway/internal/config"
 	"github.com/mentor-sator/Sifer/services/edge-gateway/internal/httpapi"
 	"github.com/mentor-sator/Sifer/services/edge-gateway/internal/mtls"
-	"github.com/mentor-sator/Sifer/services/edge-gateway/internal/probe"
-	"github.com/mentor-sator/Sifer/services/edge-gateway/internal/telemetry"
 )
 
 const (
