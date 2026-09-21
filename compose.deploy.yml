@@ -1,0 +1,85 @@
+name: sifer
+
+include:
+  - docker-compose.yml
+
+x-hardened: &hardened
+  restart: unless-stopped
+  read_only: true
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  orchestrator:
+    <<: *hardened
+    build:
+      context: .
+      dockerfile: services/orchestrator/Dockerfile
+    image: sifer/orchestrator:deploy
+    environment:
+      SIFER_ORCHESTRATOR_ADDR: 0.0.0.0:8083
+      SIFER_TLS_CA: /run/secrets/sifer-ca
+      SIFER_TLS_CERT: /run/secrets/orchestrator-cert
+      SIFER_TLS_KEY: /run/secrets/orchestrator-key
+    secrets:
+      - sifer-ca
+      - orchestrator-cert
+      - orchestrator-key
+    networks:
+      - internal
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ['CMD', 'sifer-orchestrator-healthcheck']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  edge-gateway:
+    <<: *hardened
+    build:
+      context: .
+      dockerfile: services/edge-gateway/Dockerfile
+    image: sifer/edge-gateway:deploy
+    depends_on:
+      orchestrator:
+        condition: service_healthy
+    environment:
+      SIFER_GATEWAY_ADDR: 0.0.0.0:8080
+      SIFER_ORCHESTRATOR_ADDR: orchestrator:8083
+      SIFER_ORCHESTRATOR_TLS_CA: /run/secrets/sifer-ca
+      SIFER_ORCHESTRATOR_TLS_CERT: /run/secrets/edge-gateway-cert
+      SIFER_ORCHESTRATOR_TLS_KEY: /run/secrets/edge-gateway-key
+    secrets:
+      - sifer-ca
+      - edge-gateway-cert
+      - edge-gateway-key
+    networks:
+      - internal
+      - edge
+    ports:
+      - '127.0.0.1:8080:8080'
+    healthcheck:
+      test: ['CMD', '/edge-gateway', 'healthcheck']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+networks:
+  internal:
+    internal: true
+  edge: {}
+
+secrets:
+  sifer-ca:
+    file: ${SIFER_TLS_DIR:?set SIFER_TLS_DIR to the certificate folder}/ca.crt
+  orchestrator-cert:
+    file: ${SIFER_TLS_DIR:?set SIFER_TLS_DIR to the certificate folder}/orchestrator.crt
+  orchestrator-key:
+    file: ${SIFER_TLS_DIR:?set SIFER_TLS_DIR to the certificate folder}/orchestrator.key
+  edge-gateway-cert:
+    file: ${SIFER_TLS_DIR:?set SIFER_TLS_DIR to the certificate folder}/edge-gateway.crt
+  edge-gateway-key:
+    file: ${SIFER_TLS_DIR:?set SIFER_TLS_DIR to the certificate folder}/edge-gateway.key

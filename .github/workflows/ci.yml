@@ -85,56 +85,12 @@ jobs:
       - name: Build
         run: pnpm build
 
-  images:
-    name: Container images (build, non-root, echo through both)
+  deploy:
+    name: Deploy stack (compose.deploy.yml — P0 services, gateway and orchestrator over mTLS)
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - name: actions/checkout v7.0.1
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-
-      - name: Build edge-gateway
-        run: docker build --file services/edge-gateway/Dockerfile --tag sifer/edge-gateway:ci .
-
-      - name: Build orchestrator
-        run: docker build --file services/orchestrator/Dockerfile --tag sifer/orchestrator:ci .
-
-      - name: Images run as non-root
-        run: |
-          for image in sifer/edge-gateway:ci sifer/orchestrator:ci; do
-            user="$(docker image inspect --format '{{.Config.User}}' "$image")"
-            echo "$image runs as '$user'"
-            case "$user" in ''|root|0|0:0|root:root) exit 1 ;; esac
-          done
-
-      - name: Echo through both containers
-        run: |
-          docker network create sifer-p1
-          docker run --detach --name orchestrator --network sifer-p1 -e SIFER_ORCHESTRATOR_ADDR=0.0.0.0:8083 sifer/orchestrator:ci
-          docker run --detach --name gateway --network sifer-p1 --publish 127.0.0.1:8080:8080 -e SIFER_GATEWAY_ADDR=0.0.0.0:8080 -e SIFER_ORCHESTRATOR_ADDR=orchestrator:8083 sifer/edge-gateway:ci
-          status=0
-          for attempt in $(seq 1 30); do
-            status="$(curl --silent --output /tmp/ok.json --write-out '%{http_code}' -X POST http://127.0.0.1:8080/v1/echo -d '{"schemaMajor":1}' || true)"
-            [ "$status" = 200 ] && break
-            sleep 1
-          done
-          echo "schemaMajor 1 -> $status $(cat /tmp/ok.json)"
-          [ "$status" = 200 ]
-          status="$(curl --silent --output /tmp/stale.json --write-out '%{http_code}' -X POST http://127.0.0.1:8080/v1/echo -d '{"schemaMajor":2}')"
-          echo "schemaMajor 2 -> $status $(cat /tmp/stale.json)"
-          [ "$status" = 409 ]
-
-      - name: Container logs on failure
-        if: failure()
-        run: |
-          docker logs orchestrator || true
-          docker logs gateway || true
-  compose:
-    name: Container stack (docker-compose.yml)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
+    env:
+      COMPOSE_FILE: compose.deploy.yml
     steps:
       - name: actions/checkout v7.0.1
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -149,13 +105,22 @@ jobs:
             echo "$name=$value" >> "$GITHUB_ENV"
           done
 
-      - name: Validate compose file
+      - name: Generate throwaway mTLS certificates
+        run: |
+          dir="$RUNNER_TEMP/sifer-tls"
+          bash infra/deploy/make-certs.sh "$dir"
+          sudo chown 10001:10001 "$dir/orchestrator.key"
+          sudo chown 65532:65532 "$dir/edge-gateway.key"
+          openssl verify -CAfile "$dir/ca.crt" "$dir/orchestrator.crt" "$dir/edge-gateway.crt"
+          echo "SIFER_TLS_DIR=$dir" >> "$GITHUB_ENV"
+
+      - name: Validate compose files
         run: docker compose config --quiet
 
-      - name: Start stack
-        run: docker compose up --detach --wait --wait-timeout 180
+      - name: Build and start stack
+        run: docker compose up --build --detach --wait --wait-timeout 300
 
-      - name: Smoke test
+      - name: Smoke test P0 services
         run: |
           docker compose exec -T postgres pg_isready -U postgres
           docker compose exec -T redis sh -c 'redis-cli --no-auth-warning -a "$REDIS_PASSWORD" ping' | grep -q PONG
@@ -163,6 +128,53 @@ jobs:
           curl --fail --silent --show-error http://127.0.0.1:9000/minio/health/live
           curl --fail --silent --show-error http://127.0.0.1:7880/
           docker compose exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" postgres psql -h pgbouncer -p 6432 -U postgres -d postgres -tAc 'select 1' | grep -qx 1
+
+      - name: Images run as non-root
+        run: |
+          for image in sifer/edge-gateway:deploy sifer/orchestrator:deploy; do
+            user="$(docker image inspect --format '{{.Config.User}}' "$image")"
+            echo "$image runs as '$user'"
+            case "$user" in ''|root|0|0:0|root:root) exit 1 ;; esac
+          done
+
+      - name: Echo through the gateway over mTLS
+        run: |
+          status="$(curl --silent --output /tmp/ok.json --write-out '%{http_code}' -X POST http://127.0.0.1:8080/v1/echo -d '{"schemaMajor":1}')"
+          echo "schemaMajor 1 -> $status $(cat /tmp/ok.json)"
+          [ "$status" = 200 ]
+          status="$(curl --silent --output /tmp/stale.json --write-out '%{http_code}' -X POST http://127.0.0.1:8080/v1/echo -d '{"schemaMajor":2}')"
+          echo "schemaMajor 2 -> $status $(cat /tmp/stale.json)"
+          [ "$status" = 409 ]
+
+      - name: Orchestrator is private and refuses callers without a client certificate
+        run: |
+          ports="$(docker inspect --format '{{json .NetworkSettings.Ports}}' "$(docker compose ps -q orchestrator)")"
+          echo "orchestrator ports: $ports"
+          if echo "$ports" | grep -q HostPort; then
+            echo "orchestrator is published to the host"
+            exit 1
+          fi
+          docker compose exec -T orchestrator python - <<'EOF'
+          import grpc
+          from sifer.v1 import envelope_pb2, orchestrator_pb2, orchestrator_pb2_grpc
+
+          request = orchestrator_pb2.EchoRequest(envelope=envelope_pb2.Envelope(schema_major=1))
+          with open("/run/secrets/sifer-ca", "rb") as ca_file:
+              ca = ca_file.read()
+          attempts = {
+              "plaintext": grpc.insecure_channel("orchestrator:8083"),
+              "TLS without a client certificate": grpc.secure_channel(
+                  "orchestrator:8083", grpc.ssl_channel_credentials(ca)
+              ),
+          }
+          for name, channel in attempts.items():
+              try:
+                  orchestrator_pb2_grpc.OrchestratorServiceStub(channel).Echo(request, timeout=5)
+              except grpc.RpcError as error:
+                  print(f"{name}: refused ({error.code().name})")
+              else:
+                  raise SystemExit(f"{name}: accepted, mTLS is not enforced")
+          EOF
 
       - name: Atlas CLI (arigaio/atlas 1.3.3, pinned by digest)
         run: |
@@ -186,6 +198,7 @@ jobs:
           "schemas present: $($expected -join ', ')"
           Invoke-SiferMigrate -Target $target
           Reset-SiferDatabase -Target $target
+
       - name: Service logs on failure
         if: failure()
         run: docker compose logs --no-color
