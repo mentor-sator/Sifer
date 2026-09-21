@@ -1,6 +1,8 @@
 import logging
 
 from grpc import aio
+from opentelemetry.instrumentation.grpc import aio_server_interceptor
+from opentelemetry.trace import TracerProvider
 from sifer.v1 import orchestrator_pb2_grpc
 
 from sifer_orchestrator.config import Config
@@ -9,8 +11,10 @@ from sifer_orchestrator.service import OrchestratorService
 log = logging.getLogger(__name__)
 
 
-async def start(config: Config) -> tuple[aio.Server, int]:
-    server = aio.server()
+async def start(
+    config: Config, tracer_provider: TracerProvider | None = None
+) -> tuple[aio.Server, int]:
+    server = aio.server(interceptors=[aio_server_interceptor(tracer_provider=tracer_provider)])
     orchestrator_pb2_grpc.add_OrchestratorServiceServicer_to_server(OrchestratorService(), server)
     port = server.add_insecure_port(config.addr)
     if port == 0:
@@ -21,7 +25,7 @@ async def start(config: Config) -> tuple[aio.Server, int]:
 
 async def serve(config: Config) -> None:
     server, _ = await start(config)
-    log.info("orchestrator listening", extra={"addr": config.addr})
+    log.info("orchestrator listening", extra={"addr": config.addr, "otlp": config.otlp_endpoint})
     try:
         await server.wait_for_termination()
     finally:

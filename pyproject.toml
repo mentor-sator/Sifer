@@ -36,6 +36,7 @@ strict = true
 mypy_path = ["gen/py", "services/orchestrator/src"]
 explicit_package_bases = true
 files = ["services/orchestrator/src", "services/orchestrator/tests"]
+untyped_calls_exclude = ["opentelemetry.instrumentation.grpc"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
