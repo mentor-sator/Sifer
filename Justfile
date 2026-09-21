@@ -40,6 +40,9 @@ gen:
 gateway:
     go run ./services/edge-gateway
 
+identity:
+    Import-Module ./tools/DevSecrets.psm1 -Force; $env:SIFER_IDENTITY_DATABASE_URL = (Get-SiferDevSecrets)['IDENTITY_DATABASE_URL']; go run ./services/identity
+
 orchestrator:
     uv run --locked --all-packages sifer-orchestrator
 
