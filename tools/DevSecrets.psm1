@@ -46,6 +46,7 @@ function New-SiferDevSecrets {
     }
 
     $postgres = Get-SiferSecret -Name 'postgres/superuser'
+    $identity = Get-SiferSecret -Name 'postgres/identity'
     $redis = Get-SiferSecret -Name 'redis/default'
     $qdrant = Get-SiferSecret -Name 'qdrant/api-key'
     $silo = Get-SiferSecret -Name 'silo/root-password'
@@ -54,6 +55,7 @@ function New-SiferDevSecrets {
 
     $entries = [ordered]@{
         POSTGRES_SUPERUSER_URL  = "postgresql://postgres:$postgres@127.0.0.1:5433/postgres"
+        IDENTITY_DATABASE_URL   = "postgresql://sifer_identity:$identity@127.0.0.1:5433/sifer?sslmode=disable"
         REDIS_URL               = "redis://default:$redis@127.0.0.1:6390/0"
         QDRANT_URL              = 'http://127.0.0.1:6333'
         QDRANT_GRPC_URL         = 'http://127.0.0.1:6334'

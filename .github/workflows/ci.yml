@@ -99,7 +99,7 @@ jobs:
 
       - name: Generate throwaway credentials
         run: |
-          for name in POSTGRES_PASSWORD REDIS_PASSWORD QDRANT_API_KEY SILO_ROOT_PASSWORD LIVEKIT_API_SECRET; do
+          for name in POSTGRES_PASSWORD REDIS_PASSWORD QDRANT_API_KEY SILO_ROOT_PASSWORD LIVEKIT_API_SECRET IDENTITY_DB_PASSWORD; do
             value="$(openssl rand -hex 32)"
             echo "::add-mask::$value"
             echo "$name=$value" >> "$GITHUB_ENV"
@@ -189,7 +189,7 @@ jobs:
         shell: pwsh
         run: |
           Import-Module ./tools/Database.psm1 -Force
-          $target = Get-SiferDbTarget -Port 5432 -Password $env:POSTGRES_PASSWORD
+          $target = Get-SiferDbTarget -Port 5432 -Password $env:POSTGRES_PASSWORD -RolePasswords @{ sifer_identity = $env:IDENTITY_DB_PASSWORD }
           Reset-SiferDatabase -Target $target
           $schemas = @(Get-SiferDbSchemas -Target $target)
           $expected = @(Get-ChildItem db/migrations -Directory | ForEach-Object Name)
@@ -198,6 +198,42 @@ jobs:
           "schemas present: $($expected -join ', ')"
           Invoke-SiferMigrate -Target $target
           Reset-SiferDatabase -Target $target
+
+      - name: sifer_identity is confined to the identity schema
+        shell: pwsh
+        run: |
+          $env:PGPASSWORD = $env:IDENTITY_DB_PASSWORD
+          function Invoke-AsIdentity([string]$Database, [string]$Sql) {
+            $output = & psql -X -q -At -v ON_ERROR_STOP=1 -h 127.0.0.1 -p 5432 -U sifer_identity -d $Database -c $Sql 2>&1
+            [pscustomobject]@{ Ok = ($LASTEXITCODE -eq 0); Output = "$output" }
+          }
+          $allowed = @(
+            "SELECT count(*) FROM identity.user_account",
+            "INSERT INTO identity.user_account (email) VALUES ('ci@sifer.test') RETURNING 1",
+            "UPDATE identity.user_account SET display_name = 'ci' WHERE email = 'ci@sifer.test' RETURNING 1"
+          )
+          foreach ($sql in $allowed) {
+            $result = Invoke-AsIdentity 'sifer' $sql
+            if (-not $result.Ok) { throw "refused but should be allowed: $sql -> $($result.Output)" }
+            "allowed: $sql"
+          }
+          $denied = [ordered]@{
+            'sifer'    = @(
+              "DELETE FROM identity.user_account",
+              "CREATE TABLE identity.intruder (x int)",
+              "DROP TABLE identity.refresh_token",
+              "CREATE TABLE public.intruder (x int)",
+              "CREATE TABLE memory.intruder (x int)"
+            )
+            'postgres' = @("SELECT 1")
+          }
+          foreach ($database in $denied.Keys) {
+            foreach ($sql in $denied[$database]) {
+              $result = Invoke-AsIdentity $database $sql
+              if ($result.Ok) { throw "allowed but should be refused: [$database] $sql" }
+              "refused: [$database] $sql"
+            }
+          }
 
       - name: Service logs on failure
         if: failure()
