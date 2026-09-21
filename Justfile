@@ -37,6 +37,9 @@ fmt:
 gen:
     buf generate
 
+gateway:
+    go run ./services/edge-gateway
+
 seed:
     Import-Module ./tools/Database.psm1 -Force; Reset-SiferDatabase -Target (Get-SiferDbTarget)
 
