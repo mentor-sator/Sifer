@@ -1,0 +1,44 @@
+[tool.uv]
+required-version = "==0.12.17"
+python-preference = "only-managed"
+
+[tool.uv.workspace]
+members = ["packages/contracts-py", "services/orchestrator"]
+
+[dependency-groups]
+dev = [
+  "mypy==2.3.1",
+  "pytest==9.1.1",
+  "pytest-asyncio==1.4.0",
+  "ruff==0.16.8",
+  "types-grpcio==1.83.0.20260730",
+  "types-protobuf==7.35.1.20260906",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["gen", "node_modules"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF", "ASYNC", "PT", "N", "S", "T20"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["sifer_orchestrator"]
+known-third-party = ["sifer"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["S101"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = ["gen/py", "services/orchestrator/src"]
+explicit_package_bases = true
+files = ["services/orchestrator/src", "services/orchestrator/tests"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["services/orchestrator/tests"]
+addopts = ["--strict-markers", "--strict-config"]

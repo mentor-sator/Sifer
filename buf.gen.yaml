@@ -19,9 +19,11 @@ plugins:
     opt: paths=source_relative
   - remote: buf.build/protocolbuffers/python:v36.2
     out: gen/py
-  - remote: buf.build/protocolbuffers/pyi:v36.2
-    out: gen/py
   - remote: buf.build/grpc/python:v1.84.0
+    out: gen/py
+  - remote: buf.build/community/nipunn1313-mypy:v5.1.0
+    out: gen/py
+  - remote: buf.build/community/nipunn1313-mypy-grpc:v5.1.0
     out: gen/py
 inputs:
   - directory: contracts

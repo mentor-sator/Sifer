@@ -40,6 +40,9 @@ gen:
 gateway:
     go run ./services/edge-gateway
 
+orchestrator:
+    uv run --locked --all-packages sifer-orchestrator
+
 seed:
     Import-Module ./tools/Database.psm1 -Force; Reset-SiferDatabase -Target (Get-SiferDbTarget)
 

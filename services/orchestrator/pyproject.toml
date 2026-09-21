@@ -1,0 +1,15 @@
+[project]
+name = "sifer-orchestrator"
+version = "0.0.0"
+requires-python = "==3.12.14"
+dependencies = ["sifer-contracts"]
+
+[project.scripts]
+sifer-orchestrator = "sifer_orchestrator.__main__:main"
+
+[tool.uv.sources]
+sifer-contracts = { workspace = true }
+
+[build-system]
+requires = ["hatchling==1.32.4"]
+build-backend = "hatchling.build"

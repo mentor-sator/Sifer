@@ -48,6 +48,13 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
+      - name: uv 0.12.17 (checksum verified)
+        run: |
+          curl --fail --silent --show-error --location --retry 3 -o /tmp/uv.tar.gz https://github.com/astral-sh/uv/releases/download/0.12.17/uv-x86_64-unknown-linux-gnu.tar.gz
+          echo "fa82fd8dde8e8eefdecada6aa0889666556cfceb690d06e0c3bca49eb3070a63  /tmp/uv.tar.gz" | sha256sum --check --strict
+          tar -xzf /tmp/uv.tar.gz -C /tmp
+          sudo install -m 0755 /tmp/uv-x86_64-unknown-linux-gnu/uv /usr/local/bin/uv
+          uv --version
       - name: Install (frozen lockfile)
         run: pnpm install --frozen-lockfile
 
