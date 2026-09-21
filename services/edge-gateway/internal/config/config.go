@@ -10,12 +10,24 @@ const (
 	defaultAddr             = "127.0.0.1:8080"
 	defaultOrchestratorAddr = "127.0.0.1:8083"
 	defaultOTLPEndpoint     = "127.0.0.1:4317"
+	orchestratorTLSPrefix   = "SIFER_ORCHESTRATOR_TLS"
 )
+
+type TLSFiles struct {
+	CA   string
+	Cert string
+	Key  string
+}
+
+func (f TLSFiles) Enabled() bool {
+	return f != TLSFiles{}
+}
 
 type Config struct {
 	Addr             string
 	OrchestratorAddr string
 	OTLPEndpoint     string
+	OrchestratorTLS  TLSFiles
 }
 
 func Load() (Config, error) {
@@ -31,7 +43,16 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	return Config{Addr: addr, OrchestratorAddr: orchestratorAddr, OTLPEndpoint: otlpEndpoint}, nil
+	orchestratorTLS, err := tlsFiles(orchestratorTLSPrefix)
+	if err != nil {
+		return Config{}, err
+	}
+	return Config{
+		Addr:             addr,
+		OrchestratorAddr: orchestratorAddr,
+		OTLPEndpoint:     otlpEndpoint,
+		OrchestratorTLS:  orchestratorTLS,
+	}, nil
 }
 
 func hostPort(name, fallback string) (string, error) {
@@ -43,4 +64,22 @@ func hostPort(name, fallback string) (string, error) {
 		return "", fmt.Errorf("%s %q: %w", name, value, err)
 	}
 	return value, nil
+}
+
+func tlsFiles(prefix string) (TLSFiles, error) {
+	files := TLSFiles{
+		CA:   os.Getenv(prefix + "_CA"),
+		Cert: os.Getenv(prefix + "_CERT"),
+		Key:  os.Getenv(prefix + "_KEY"),
+	}
+	set := 0
+	for _, value := range []string{files.CA, files.Cert, files.Key} {
+		if value != "" {
+			set++
+		}
+	}
+	if set != 0 && set != 3 {
+		return TLSFiles{}, fmt.Errorf("%s_CA, %s_CERT and %s_KEY must be set together", prefix, prefix, prefix)
+	}
+	return files, nil
 }

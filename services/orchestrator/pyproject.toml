@@ -12,6 +12,7 @@ dependencies = [
 
 [project.scripts]
 sifer-orchestrator = "sifer_orchestrator.__main__:main"
+sifer-orchestrator-healthcheck = "sifer_orchestrator.healthcheck:main"
 
 [tool.uv.sources]
 sifer-contracts = { workspace = true }
