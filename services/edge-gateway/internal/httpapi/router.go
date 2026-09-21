@@ -4,13 +4,22 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+
+	siferv1 "github.com/mentor-sator/Sifer/gen/go/sifer/v1"
 )
 
-func NewRouter() *gin.Engine {
+type api struct {
+	orchestrator siferv1.OrchestratorServiceClient
+}
+
+func NewRouter(orchestrator siferv1.OrchestratorServiceClient) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(gin.Recovery())
+
+	handlers := &api{orchestrator: orchestrator}
 	router.GET("/healthz", health)
+	router.POST("/v1/echo", handlers.echo)
 	return router
 }
 

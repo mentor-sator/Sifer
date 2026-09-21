@@ -6,19 +6,35 @@ import (
 	"os"
 )
 
-const defaultAddr = "127.0.0.1:8080"
+const (
+	defaultAddr             = "127.0.0.1:8080"
+	defaultOrchestratorAddr = "127.0.0.1:8083"
+)
 
 type Config struct {
-	Addr string
+	Addr             string
+	OrchestratorAddr string
 }
 
 func Load() (Config, error) {
-	addr := os.Getenv("SIFER_GATEWAY_ADDR")
-	if addr == "" {
-		addr = defaultAddr
+	addr, err := hostPort("SIFER_GATEWAY_ADDR", defaultAddr)
+	if err != nil {
+		return Config{}, err
 	}
-	if _, _, err := net.SplitHostPort(addr); err != nil {
-		return Config{}, fmt.Errorf("SIFER_GATEWAY_ADDR %q: %w", addr, err)
+	orchestratorAddr, err := hostPort("SIFER_ORCHESTRATOR_ADDR", defaultOrchestratorAddr)
+	if err != nil {
+		return Config{}, err
 	}
-	return Config{Addr: addr}, nil
+	return Config{Addr: addr, OrchestratorAddr: orchestratorAddr}, nil
+}
+
+func hostPort(name, fallback string) (string, error) {
+	value := os.Getenv(name)
+	if value == "" {
+		value = fallback
+	}
+	if _, _, err := net.SplitHostPort(value); err != nil {
+		return "", fmt.Errorf("%s %q: %w", name, value, err)
+	}
+	return value, nil
 }

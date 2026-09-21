@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -10,6 +11,10 @@ import (
 	"syscall"
 	"time"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+
+	siferv1 "github.com/mentor-sator/Sifer/gen/go/sifer/v1"
 	"github.com/mentor-sator/Sifer/services/edge-gateway/internal/config"
 	"github.com/mentor-sator/Sifer/services/edge-gateway/internal/httpapi"
 )
@@ -30,12 +35,18 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 
+	conn, err := grpc.NewClient(cfg.OrchestratorAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return fmt.Errorf("orchestrator client %s: %w", cfg.OrchestratorAddr, err)
+	}
+	defer conn.Close()
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	server := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           httpapi.NewRouter(),
+		Handler:           httpapi.NewRouter(siferv1.NewOrchestratorServiceClient(conn)),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -44,7 +55,7 @@ func run(logger *slog.Logger) error {
 
 	serveErr := make(chan error, 1)
 	go func() {
-		logger.Info("edge-gateway listening", "addr", cfg.Addr)
+		logger.Info("edge-gateway listening", "addr", cfg.Addr, "orchestrator", cfg.OrchestratorAddr)
 		serveErr <- server.ListenAndServe()
 	}()
 
