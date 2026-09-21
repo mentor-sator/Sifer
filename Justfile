@@ -49,6 +49,9 @@ obs-up:
 obs-down:
     docker compose -f infra/observability/compose.yml down
 
+trace id:
+    ./tools/Get-SiferTrace.ps1 -TraceId {{id}}
+
 seed:
     Import-Module ./tools/Database.psm1 -Force; Reset-SiferDatabase -Target (Get-SiferDbTarget)
 

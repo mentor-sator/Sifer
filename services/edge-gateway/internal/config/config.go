@@ -9,11 +9,13 @@ import (
 const (
 	defaultAddr             = "127.0.0.1:8080"
 	defaultOrchestratorAddr = "127.0.0.1:8083"
+	defaultOTLPEndpoint     = "127.0.0.1:4317"
 )
 
 type Config struct {
 	Addr             string
 	OrchestratorAddr string
+	OTLPEndpoint     string
 }
 
 func Load() (Config, error) {
@@ -25,7 +27,11 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	return Config{Addr: addr, OrchestratorAddr: orchestratorAddr}, nil
+	otlpEndpoint, err := hostPort("SIFER_OTLP_ENDPOINT", defaultOTLPEndpoint)
+	if err != nil {
+		return Config{}, err
+	}
+	return Config{Addr: addr, OrchestratorAddr: orchestratorAddr, OTLPEndpoint: otlpEndpoint}, nil
 }
 
 func hostPort(name, fallback string) (string, error) {
