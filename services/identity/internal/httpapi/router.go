@@ -22,11 +22,12 @@ type Pinger interface {
 }
 
 type api struct {
-	db     Pinger
-	logger *slog.Logger
+	db       Pinger
+	accounts Registrar
+	logger   *slog.Logger
 }
 
-func NewRouter(db Pinger, logger *slog.Logger) *gin.Engine {
+func NewRouter(db Pinger, accounts Registrar, logger *slog.Logger) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(
@@ -35,9 +36,10 @@ func NewRouter(db Pinger, logger *slog.Logger) *gin.Engine {
 		traceResponse,
 	)
 
-	handlers := &api{db: db, logger: logger}
+	handlers := &api{db: db, accounts: accounts, logger: logger}
 	router.GET("/healthz", health)
 	router.GET("/readyz", handlers.ready)
+	router.POST("/v1/register", handlers.register)
 	return router
 }
 

@@ -13,15 +13,18 @@ import (
 
 	"github.com/mentor-sator/Sifer/internal/probe"
 	"github.com/mentor-sator/Sifer/internal/telemetry"
+	"github.com/mentor-sator/Sifer/services/identity/internal/account"
 	"github.com/mentor-sator/Sifer/services/identity/internal/config"
 	"github.com/mentor-sator/Sifer/services/identity/internal/httpapi"
+	"github.com/mentor-sator/Sifer/services/identity/internal/password"
 	"github.com/mentor-sator/Sifer/services/identity/internal/store"
 )
 
 const (
-	serviceName    = "identity"
-	shutdownGrace  = 10 * time.Second
-	telemetryFlush = 3 * time.Second
+	serviceName        = "identity"
+	shutdownGrace      = 10 * time.Second
+	telemetryFlush     = 3 * time.Second
+	hashingConcurrency = 2
 )
 
 func main() {
@@ -75,9 +78,11 @@ func run(logger *slog.Logger) error {
 	}
 	defer pool.Close()
 
+	accounts := account.NewService(store.NewAccounts(pool), password.NewHasher(password.Default, hashingConcurrency))
+
 	server := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           httpapi.NewRouter(pool, logger),
+		Handler:           httpapi.NewRouter(pool, accounts, logger),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,

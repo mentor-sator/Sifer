@@ -33,7 +33,7 @@ func quietLogger() *slog.Logger {
 func serve(t *testing.T, db Pinger, path string) (int, map[string]string) {
 	t.Helper()
 	recorder := httptest.NewRecorder()
-	NewRouter(db, quietLogger()).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+	NewRouter(db, nil, quietLogger()).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
 	body := map[string]string{}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
 		t.Fatalf("%s body %q: %v", path, recorder.Body.String(), err)
@@ -75,7 +75,7 @@ func TestReadyzGivesUpOnSlowDatabase(t *testing.T) {
 
 func TestUnknownRouteIs404(t *testing.T) {
 	recorder := httptest.NewRecorder()
-	NewRouter(pinger{}, quietLogger()).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/nothing", nil))
+	NewRouter(pinger{}, nil, quietLogger()).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/nothing", nil))
 	if recorder.Code != http.StatusNotFound {
 		t.Fatalf("status = %d", recorder.Code)
 	}
