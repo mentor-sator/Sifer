@@ -12,12 +12,16 @@ const (
 	defaultOTLPEndpoint = "127.0.0.1:4317"
 )
 
-var ErrDatabaseURLMissing = errors.New("SIFER_IDENTITY_DATABASE_URL is not set")
+var (
+	ErrDatabaseURLMissing = errors.New("SIFER_IDENTITY_DATABASE_URL is not set")
+	ErrSigningKeyMissing  = errors.New("SIFER_IDENTITY_SIGNING_KEY is not set")
+)
 
 type Config struct {
 	Addr         string
 	OTLPEndpoint string
 	DatabaseURL  string
+	SigningKey   string
 }
 
 func Load() (Config, error) {
@@ -33,7 +37,11 @@ func Load() (Config, error) {
 	if databaseURL == "" {
 		return Config{}, ErrDatabaseURLMissing
 	}
-	return Config{Addr: addr, OTLPEndpoint: otlpEndpoint, DatabaseURL: databaseURL}, nil
+	signingKey := os.Getenv("SIFER_IDENTITY_SIGNING_KEY")
+	if signingKey == "" {
+		return Config{}, ErrSigningKeyMissing
+	}
+	return Config{Addr: addr, OTLPEndpoint: otlpEndpoint, DatabaseURL: databaseURL, SigningKey: signingKey}, nil
 }
 
 func hostPort(name, fallback string) (string, error) {

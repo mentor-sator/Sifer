@@ -10,6 +10,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/mentor-sator/Sifer/services/identity/internal/signing"
 )
 
 type pinger struct {
@@ -33,7 +35,7 @@ func quietLogger() *slog.Logger {
 func serve(t *testing.T, db Pinger, path string) (int, map[string]string) {
 	t.Helper()
 	recorder := httptest.NewRecorder()
-	NewRouter(db, nil, quietLogger()).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+	NewRouter(Dependencies{DB: db, Logger: quietLogger()}).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
 	body := map[string]string{}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
 		t.Fatalf("%s body %q: %v", path, recorder.Body.String(), err)
@@ -75,8 +77,32 @@ func TestReadyzGivesUpOnSlowDatabase(t *testing.T) {
 
 func TestUnknownRouteIs404(t *testing.T) {
 	recorder := httptest.NewRecorder()
-	NewRouter(pinger{}, nil, quietLogger()).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/nothing", nil))
+	NewRouter(Dependencies{DB: pinger{}, Logger: quietLogger()}).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/nothing", nil))
 	if recorder.Code != http.StatusNotFound {
 		t.Fatalf("status = %d", recorder.Code)
+	}
+}
+
+type staticKeys struct{}
+
+func (staticKeys) JWKS() signing.JWKSet {
+	return signing.JWKSet{Keys: []signing.JWK{{Kty: "OKP", Crv: "Ed25519", X: "x", Kid: "kid", Use: "sig", Alg: "EdDSA"}}}
+}
+
+func TestJWKSPublishesKeysWithCaching(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	NewRouter(Dependencies{Keys: staticKeys{}, Logger: quietLogger()}).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/.well-known/jwks.json", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d", recorder.Code)
+	}
+	if got := recorder.Header().Get("Cache-Control"); got != "public, max-age=300" {
+		t.Fatalf("Cache-Control = %q", got)
+	}
+	var set signing.JWKSet
+	if err := json.Unmarshal(recorder.Body.Bytes(), &set); err != nil {
+		t.Fatal(err)
+	}
+	if len(set.Keys) != 1 || set.Keys[0].Kid != "kid" || set.Keys[0].Alg != "EdDSA" {
+		t.Fatalf("jwks = %+v", set)
 	}
 }

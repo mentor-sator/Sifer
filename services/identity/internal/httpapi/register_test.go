@@ -37,7 +37,7 @@ func post(t *testing.T, accounts Registrar, body string) (int, map[string]string
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/v1/register", strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
-	NewRouter(pinger{}, accounts, quietLogger()).ServeHTTP(recorder, request)
+	NewRouter(Dependencies{DB: pinger{}, Accounts: accounts, Logger: quietLogger()}).ServeHTTP(recorder, request)
 	response := map[string]string{}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 		t.Fatalf("body %q: %v", recorder.Body.String(), err)

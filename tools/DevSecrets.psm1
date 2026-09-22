@@ -6,6 +6,7 @@ Import-Module (Join-Path $PSScriptRoot 'SiferSecrets.psm1') -Force
 $script:Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $script:Recipients = Join-Path $script:Root 'secrets\recipients.txt'
 $script:DevFile = Join-Path $script:Root 'secrets\dev.age'
+$script:IdentityKeyFile = Join-Path $script:Root 'secrets\identity.key.age'
 $script:Pfx = Join-Path $script:Root 'secrets\sifer-codesign.pfx'
 $script:Thumbprint = 'C8DBC5E9EB36C7A7CD46118940D3F270B0FCB051'
 $script:Ephemeral = [Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet
@@ -109,4 +110,36 @@ function Test-SiferDevSecrets {
     }
 }
 
-Export-ModuleMember -Function New-SiferDevSecrets, Get-SiferDevSecrets, Test-SiferDevSecrets
+function New-SiferIdentityKey {
+    param([switch]$Rotate)
+    if ((Test-Path $script:IdentityKeyFile) -and -not $Rotate) {
+        throw 'secrets\identity.key.age already exists. Replacing it signs every user out; call New-SiferIdentityKey -Rotate to do that deliberately.'
+    }
+    Push-Location $script:Root
+    try {
+        $encoded = go run ./services/identity keygen
+        if ($LASTEXITCODE -ne 0) {
+            throw 'identity keygen failed.'
+        }
+        $encoded | age -R $script:Recipients -o $script:IdentityKeyFile
+        if ($LASTEXITCODE -ne 0) {
+            throw 'age failed to encrypt secrets\identity.key.age.'
+        }
+    } finally {
+        Pop-Location
+    }
+    "secrets\identity.key.age written: $((Get-Item $script:IdentityKeyFile).Length) bytes"
+}
+
+function Get-SiferIdentityKey {
+    if (-not (Test-Path $script:IdentityKeyFile)) {
+        throw "Not found: $script:IdentityKeyFile. Run 'just identity-key'."
+    }
+    $lines = Get-SiferSecret -Name 'age/workstation' | age -d -i - $script:IdentityKeyFile
+    if ($LASTEXITCODE -ne 0) {
+        throw 'age failed to decrypt secrets\identity.key.age.'
+    }
+    (@($lines) -join '').Trim()
+}
+
+Export-ModuleMember -Function New-SiferDevSecrets, Get-SiferDevSecrets, Test-SiferDevSecrets, New-SiferIdentityKey, Get-SiferIdentityKey

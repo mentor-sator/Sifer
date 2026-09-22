@@ -10,6 +10,8 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
+
+	"github.com/mentor-sator/Sifer/services/identity/internal/signing"
 )
 
 const (
@@ -21,13 +23,25 @@ type Pinger interface {
 	Ping(ctx context.Context) error
 }
 
+type KeySet interface {
+	JWKS() signing.JWKSet
+}
+
+type Dependencies struct {
+	DB       Pinger
+	Accounts Registrar
+	Keys     KeySet
+	Logger   *slog.Logger
+}
+
 type api struct {
 	db       Pinger
 	accounts Registrar
+	keys     KeySet
 	logger   *slog.Logger
 }
 
-func NewRouter(db Pinger, accounts Registrar, logger *slog.Logger) *gin.Engine {
+func NewRouter(deps Dependencies) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(
@@ -36,9 +50,10 @@ func NewRouter(db Pinger, accounts Registrar, logger *slog.Logger) *gin.Engine {
 		traceResponse,
 	)
 
-	handlers := &api{db: db, accounts: accounts, logger: logger}
+	handlers := &api{db: deps.DB, accounts: deps.Accounts, keys: deps.Keys, logger: deps.Logger}
 	router.GET("/healthz", health)
 	router.GET("/readyz", handlers.ready)
+	router.GET("/.well-known/jwks.json", handlers.jwks)
 	router.POST("/v1/register", handlers.register)
 	return router
 }
@@ -54,6 +69,11 @@ func traceResponse(c *gin.Context) {
 
 func health(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (a *api) jwks(c *gin.Context) {
+	c.Header("Cache-Control", "public, max-age=300")
+	c.JSON(http.StatusOK, a.keys.JWKS())
 }
 
 func (a *api) ready(c *gin.Context) {

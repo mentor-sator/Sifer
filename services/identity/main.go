@@ -17,6 +17,7 @@ import (
 	"github.com/mentor-sator/Sifer/services/identity/internal/config"
 	"github.com/mentor-sator/Sifer/services/identity/internal/httpapi"
 	"github.com/mentor-sator/Sifer/services/identity/internal/password"
+	"github.com/mentor-sator/Sifer/services/identity/internal/signing"
 	"github.com/mentor-sator/Sifer/services/identity/internal/store"
 )
 
@@ -28,8 +29,13 @@ const (
 )
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
-		os.Exit(healthcheck())
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "healthcheck":
+			os.Exit(healthcheck())
+		case "keygen":
+			os.Exit(keygen())
+		}
 	}
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -51,8 +57,22 @@ func healthcheck() int {
 	return 0
 }
 
+func keygen() int {
+	encoded, err := signing.Generate()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "keygen:", err)
+		return 1
+	}
+	fmt.Println(encoded)
+	return 0
+}
+
 func run(logger *slog.Logger) error {
 	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	key, err := signing.Parse(cfg.SigningKey)
 	if err != nil {
 		return err
 	}
@@ -81,8 +101,13 @@ func run(logger *slog.Logger) error {
 	accounts := account.NewService(store.NewAccounts(pool), password.NewHasher(password.Default, hashingConcurrency))
 
 	server := &http.Server{
-		Addr:              cfg.Addr,
-		Handler:           httpapi.NewRouter(pool, accounts, logger),
+		Addr: cfg.Addr,
+		Handler: httpapi.NewRouter(httpapi.Dependencies{
+			DB:       pool,
+			Accounts: accounts,
+			Keys:     key,
+			Logger:   logger,
+		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -98,6 +123,7 @@ func run(logger *slog.Logger) error {
 			"db_host", target.Host,
 			"db_port", target.Port,
 			"db_name", target.Database,
+			"signing_kid", key.ID(),
 		)
 		serveErr <- server.ListenAndServe()
 	}()
