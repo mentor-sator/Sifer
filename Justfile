@@ -46,6 +46,9 @@ identity:
 identity-key:
     Import-Module ./tools/DevSecrets.psm1 -Force; New-SiferIdentityKey
 
+motion:
+    pnpm --filter @sifer/motion dev
+
 orchestrator:
     uv run --locked --all-packages sifer-orchestrator
 
