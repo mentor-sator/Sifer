@@ -49,6 +49,9 @@ identity-key:
 motion:
     pnpm --filter @sifer/motion dev
 
+motion-package:
+    pnpm --filter @sifer/motion package
+
 orchestrator:
     uv run --locked --all-packages sifer-orchestrator
 
