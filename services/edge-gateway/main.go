@@ -19,6 +19,7 @@ import (
 	siferv1 "github.com/mentor-sator/Sifer/gen/go/sifer/v1"
 	"github.com/mentor-sator/Sifer/internal/probe"
 	"github.com/mentor-sator/Sifer/internal/telemetry"
+	"github.com/mentor-sator/Sifer/services/edge-gateway/internal/auth"
 	"github.com/mentor-sator/Sifer/services/edge-gateway/internal/config"
 	"github.com/mentor-sator/Sifer/services/edge-gateway/internal/httpapi"
 	"github.com/mentor-sator/Sifer/services/edge-gateway/internal/mtls"
@@ -102,9 +103,12 @@ func run(logger *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	keys := auth.NewKeys(cfg.IdentityJWKSURL, &http.Client{Timeout: 5 * time.Second}, logger)
+	go keys.Run(ctx)
+
 	server := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           httpapi.NewRouter(siferv1.NewOrchestratorServiceClient(conn)),
+		Handler:           httpapi.NewRouter(siferv1.NewOrchestratorServiceClient(conn), auth.NewVerifier(keys)),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -113,7 +117,7 @@ func run(logger *slog.Logger) error {
 
 	serveErr := make(chan error, 1)
 	go func() {
-		logger.Info("edge-gateway listening", "addr", cfg.Addr, "orchestrator", cfg.OrchestratorAddr, "otlp", cfg.OTLPEndpoint, "mtls", cfg.OrchestratorTLS.Enabled())
+		logger.Info("edge-gateway listening", "addr", cfg.Addr, "orchestrator", cfg.OrchestratorAddr, "otlp", cfg.OTLPEndpoint, "jwks", cfg.IdentityJWKSURL, "mtls", cfg.OrchestratorTLS.Enabled())
 		serveErr <- server.ListenAndServe()
 	}()
 

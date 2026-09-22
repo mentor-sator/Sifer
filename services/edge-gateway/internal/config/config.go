@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 )
 
@@ -10,6 +11,7 @@ const (
 	defaultAddr             = "127.0.0.1:8080"
 	defaultOrchestratorAddr = "127.0.0.1:8083"
 	defaultOTLPEndpoint     = "127.0.0.1:4317"
+	defaultIdentityJWKSURL  = "http://127.0.0.1:8081/.well-known/jwks.json"
 	orchestratorTLSPrefix   = "SIFER_ORCHESTRATOR_TLS"
 )
 
@@ -27,6 +29,7 @@ type Config struct {
 	Addr             string
 	OrchestratorAddr string
 	OTLPEndpoint     string
+	IdentityJWKSURL  string
 	OrchestratorTLS  TLSFiles
 }
 
@@ -43,6 +46,10 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	identityJWKSURL, err := httpURL("SIFER_IDENTITY_JWKS_URL", defaultIdentityJWKSURL)
+	if err != nil {
+		return Config{}, err
+	}
 	orchestratorTLS, err := tlsFiles(orchestratorTLSPrefix)
 	if err != nil {
 		return Config{}, err
@@ -51,6 +58,7 @@ func Load() (Config, error) {
 		Addr:             addr,
 		OrchestratorAddr: orchestratorAddr,
 		OTLPEndpoint:     otlpEndpoint,
+		IdentityJWKSURL:  identityJWKSURL,
 		OrchestratorTLS:  orchestratorTLS,
 	}, nil
 }
@@ -62,6 +70,18 @@ func hostPort(name, fallback string) (string, error) {
 	}
 	if _, _, err := net.SplitHostPort(value); err != nil {
 		return "", fmt.Errorf("%s %q: %w", name, value, err)
+	}
+	return value, nil
+}
+
+func httpURL(name, fallback string) (string, error) {
+	value := os.Getenv(name)
+	if value == "" {
+		value = fallback
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return "", fmt.Errorf("%s %q: must be an http or https URL", name, value)
 	}
 	return value, nil
 }

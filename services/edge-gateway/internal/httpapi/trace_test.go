@@ -42,7 +42,7 @@ func echoWithTrace(t *testing.T, orchestrator siferv1.OrchestratorServiceClient,
 	if traceparent != "" {
 		request.Header.Set("traceparent", traceparent)
 	}
-	NewRouter(orchestrator).ServeHTTP(recorder, request)
+	NewRouter(orchestrator, nil).ServeHTTP(recorder, request)
 	return recorder
 }
 
@@ -96,7 +96,7 @@ func TestEchoRecordsAServerSpan(t *testing.T) {
 func TestHealthChecksAreNotTraced(t *testing.T) {
 	before := len(spans.Ended())
 	recorder := httptest.NewRecorder()
-	NewRouter(&fakeOrchestrator{}).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	NewRouter(&fakeOrchestrator{}, nil).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 	if after := len(spans.Ended()); after != before {
 		t.Fatalf("health check produced %d spans", after-before)
 	}

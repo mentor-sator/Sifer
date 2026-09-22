@@ -8,20 +8,9 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
+	"github.com/mentor-sator/Sifer/internal/accesstoken"
 	"github.com/mentor-sator/Sifer/services/identity/internal/signing"
 )
-
-const (
-	IssuerName = "sifer-identity"
-	Audience   = "sifer"
-	AccessTTL  = 15 * time.Minute
-	AccessType = "at+jwt"
-)
-
-type Claims struct {
-	Email string `json:"email"`
-	jwt.RegisteredClaims
-}
 
 type Issuer struct {
 	key *signing.Key
@@ -38,13 +27,13 @@ func (i *Issuer) Access(userID, email string) (string, time.Time, error) {
 		return "", time.Time{}, fmt.Errorf("token id: %w", err)
 	}
 	now := i.now().UTC().Truncate(time.Second)
-	expires := now.Add(AccessTTL)
-	claims := Claims{
+	expires := now.Add(accesstoken.TTL)
+	claims := accesstoken.Claims{
 		Email: email,
 		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    IssuerName,
+			Issuer:    accesstoken.Issuer,
 			Subject:   userID,
-			Audience:  jwt.ClaimStrings{Audience},
+			Audience:  jwt.ClaimStrings{accesstoken.Audience},
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(expires),
@@ -53,7 +42,7 @@ func (i *Issuer) Access(userID, email string) (string, time.Time, error) {
 	}
 	unsigned := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
 	unsigned.Header["kid"] = i.key.ID()
-	unsigned.Header["typ"] = AccessType
+	unsigned.Header["typ"] = accesstoken.Type
 	signed, err := unsigned.SignedString(i.key.Private())
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("sign access token: %w", err)

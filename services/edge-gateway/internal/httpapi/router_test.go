@@ -34,7 +34,7 @@ func send(t *testing.T, orchestrator *fakeOrchestrator, method, path, body strin
 	t.Helper()
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(method, path, strings.NewReader(body))
-	NewRouter(orchestrator).ServeHTTP(recorder, request)
+	NewRouter(orchestrator, nil).ServeHTTP(recorder, request)
 	return recorder
 }
 

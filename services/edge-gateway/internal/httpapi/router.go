@@ -17,7 +17,7 @@ type api struct {
 	orchestrator siferv1.OrchestratorServiceClient
 }
 
-func NewRouter(orchestrator siferv1.OrchestratorServiceClient) *gin.Engine {
+func NewRouter(orchestrator siferv1.OrchestratorServiceClient, verifier Verifier) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(
@@ -29,6 +29,7 @@ func NewRouter(orchestrator siferv1.OrchestratorServiceClient) *gin.Engine {
 	handlers := &api{orchestrator: orchestrator}
 	router.GET("/healthz", health)
 	router.POST("/v1/echo", handlers.echo)
+	router.GET("/v1/me", requireAuth(verifier), me)
 	return router
 }
 

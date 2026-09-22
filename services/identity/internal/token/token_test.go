@@ -8,6 +8,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
+	"github.com/mentor-sator/Sifer/internal/accesstoken"
 	"github.com/mentor-sator/Sifer/services/identity/internal/signing"
 )
 
@@ -24,13 +25,13 @@ func newKey(t *testing.T) *signing.Key {
 	return key
 }
 
-func parse(t *testing.T, raw string, public ed25519.PublicKey) (*jwt.Token, *Claims, error) {
+func parse(t *testing.T, raw string, public ed25519.PublicKey) (*jwt.Token, *accesstoken.Claims, error) {
 	t.Helper()
-	claims := &Claims{}
+	claims := &accesstoken.Claims{}
 	parsed, err := jwt.ParseWithClaims(raw, claims, func(*jwt.Token) (any, error) { return public, nil },
 		jwt.WithValidMethods([]string{"EdDSA"}),
-		jwt.WithIssuer(IssuerName),
-		jwt.WithAudience(Audience),
+		jwt.WithIssuer(accesstoken.Issuer),
+		jwt.WithAudience(accesstoken.Audience),
 		jwt.WithExpirationRequired(),
 	)
 	return parsed, claims, err
@@ -45,7 +46,7 @@ func TestAccessTokenVerifiesWithPublicKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Access: %v", err)
 	}
-	if !expires.Equal(fixed.Truncate(time.Second).Add(AccessTTL)) {
+	if !expires.Equal(fixed.Truncate(time.Second).Add(accesstoken.TTL)) {
 		t.Fatalf("expires = %s", expires)
 	}
 	issuer.now = time.Now
@@ -54,7 +55,7 @@ func TestAccessTokenVerifiesWithPublicKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	if parsed.Header["kid"] != key.ID() || parsed.Header["typ"] != AccessType || parsed.Header["alg"] != "EdDSA" {
+	if parsed.Header["kid"] != key.ID() || parsed.Header["typ"] != accesstoken.Type || parsed.Header["alg"] != "EdDSA" {
 		t.Fatalf("header = %v", parsed.Header)
 	}
 	if claims.Subject != "7c9e6679-7425-40de-944b-e07fc1f90ae7" || claims.Email != "ninette@example.com" || len(claims.ID) != 22 {
