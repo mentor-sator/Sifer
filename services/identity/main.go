@@ -17,8 +17,10 @@ import (
 	"github.com/mentor-sator/Sifer/services/identity/internal/config"
 	"github.com/mentor-sator/Sifer/services/identity/internal/httpapi"
 	"github.com/mentor-sator/Sifer/services/identity/internal/password"
+	"github.com/mentor-sator/Sifer/services/identity/internal/session"
 	"github.com/mentor-sator/Sifer/services/identity/internal/signing"
 	"github.com/mentor-sator/Sifer/services/identity/internal/store"
+	"github.com/mentor-sator/Sifer/services/identity/internal/token"
 )
 
 const (
@@ -98,13 +100,20 @@ func run(logger *slog.Logger) error {
 	}
 	defer pool.Close()
 
-	accounts := account.NewService(store.NewAccounts(pool), password.NewHasher(password.Default, hashingConcurrency))
+	hasher := password.NewHasher(password.Default, hashingConcurrency)
+	accountStore := store.NewAccounts(pool)
+	accounts := account.NewService(accountStore, hasher)
+	sessions, err := session.NewService(ctx, accountStore, store.NewRefreshTokens(pool), hasher, token.NewIssuer(key))
+	if err != nil {
+		return err
+	}
 
 	server := &http.Server{
 		Addr: cfg.Addr,
 		Handler: httpapi.NewRouter(httpapi.Dependencies{
 			DB:       pool,
 			Accounts: accounts,
+			Sessions: sessions,
 			Keys:     key,
 			Logger:   logger,
 		}),

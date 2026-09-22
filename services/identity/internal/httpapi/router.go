@@ -30,6 +30,7 @@ type KeySet interface {
 type Dependencies struct {
 	DB       Pinger
 	Accounts Registrar
+	Sessions Sessions
 	Keys     KeySet
 	Logger   *slog.Logger
 }
@@ -37,6 +38,7 @@ type Dependencies struct {
 type api struct {
 	db       Pinger
 	accounts Registrar
+	sessions Sessions
 	keys     KeySet
 	logger   *slog.Logger
 }
@@ -50,11 +52,14 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		traceResponse,
 	)
 
-	handlers := &api{db: deps.DB, accounts: deps.Accounts, keys: deps.Keys, logger: deps.Logger}
+	handlers := &api{db: deps.DB, accounts: deps.Accounts, sessions: deps.Sessions, keys: deps.Keys, logger: deps.Logger}
 	router.GET("/healthz", health)
 	router.GET("/readyz", handlers.ready)
 	router.GET("/.well-known/jwks.json", handlers.jwks)
 	router.POST("/v1/register", handlers.register)
+	router.POST("/v1/login", handlers.login)
+	router.POST("/v1/refresh", handlers.refresh)
+	router.POST("/v1/logout", handlers.logout)
 	return router
 }
 

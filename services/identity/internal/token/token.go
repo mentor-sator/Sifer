@@ -1,0 +1,62 @@
+package token
+
+import (
+	"crypto/rand"
+	"encoding/base64"
+	"fmt"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+
+	"github.com/mentor-sator/Sifer/services/identity/internal/signing"
+)
+
+const (
+	IssuerName = "sifer-identity"
+	Audience   = "sifer"
+	AccessTTL  = 15 * time.Minute
+	AccessType = "at+jwt"
+)
+
+type Claims struct {
+	Email string `json:"email"`
+	jwt.RegisteredClaims
+}
+
+type Issuer struct {
+	key *signing.Key
+	now func() time.Time
+}
+
+func NewIssuer(key *signing.Key) *Issuer {
+	return &Issuer{key: key, now: time.Now}
+}
+
+func (i *Issuer) Access(userID, email string) (string, time.Time, error) {
+	id := make([]byte, 16)
+	if _, err := rand.Read(id); err != nil {
+		return "", time.Time{}, fmt.Errorf("token id: %w", err)
+	}
+	now := i.now().UTC().Truncate(time.Second)
+	expires := now.Add(AccessTTL)
+	claims := Claims{
+		Email: email,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    IssuerName,
+			Subject:   userID,
+			Audience:  jwt.ClaimStrings{Audience},
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(expires),
+			ID:        base64.RawURLEncoding.EncodeToString(id),
+		},
+	}
+	unsigned := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
+	unsigned.Header["kid"] = i.key.ID()
+	unsigned.Header["typ"] = AccessType
+	signed, err := unsigned.SignedString(i.key.Private())
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("sign access token: %w", err)
+	}
+	return signed, expires, nil
+}
