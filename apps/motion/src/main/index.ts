@@ -24,9 +24,37 @@ function createOrb(): BrowserWindow {
   const orb = new BrowserWindow(orbWindowOptions(join(here, '../preload/index.cjs')));
   orb.setAlwaysOnTop(true, 'screen-saver');
   orb.setPosition(...positionFor(orb));
-  orb.once('ready-to-show', () => orb.showInactive());
+
+  let shown = false;
+  const reveal = (): void => {
+    if (shown || orb.isDestroyed()) {
+      return;
+    }
+    shown = true;
+    orb.setPosition(...positionFor(orb));
+    orb.showInactive();
+    report(orb);
+  };
+  orb.once('ready-to-show', reveal);
+  orb.webContents.once('did-finish-load', reveal);
+  orb.webContents.on('render-process-gone', (_event, details) =>
+    console.error('orb renderer gone', details.reason),
+  );
+  orb.webContents.on('did-fail-load', (_event, code, description, url) =>
+    console.error('orb failed to load', code, description, url),
+  );
+
   load(orb, rendererPage('orb.html'));
   return orb;
+}
+
+function report(orb: BrowserWindow): void {
+  const bounds = orb.getBounds();
+  const display = screen.getDisplayNearestPoint({ x: bounds.x, y: bounds.y });
+  console.log(
+    `orb visible=${orb.isVisible()} onTop=${orb.isAlwaysOnTop()} at=${bounds.x},${bounds.y} size=${bounds.width}x${bounds.height} ` +
+      `display=${display.workArea.width}x${display.workArea.height}+${display.workArea.x}+${display.workArea.y} scale=${display.scaleFactor}`,
+  );
 }
 
 function positionFor(orb: BrowserWindow): [number, number] {
