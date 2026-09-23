@@ -1,8 +1,25 @@
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { app, BrowserWindow, ipcMain, screen, session } from 'electron';
-import { orbDragBeginChannel, orbDragEndChannel, orbDragMoveChannel } from '../shared/bridge';
+import { app, BrowserWindow, ipcMain, safeStorage, screen, session } from 'electron';
+import {
+  authChangedChannel,
+  authSignInChannel,
+  authSignOutChannel,
+  authStateChannel,
+  orbClickChannel,
+  orbDragBeginChannel,
+  orbDragEndChannel,
+  orbDragMoveChannel,
+  type SignedInState,
+  type SignInResult,
+} from '../shared/bridge';
+import { readConfig } from './config';
 import { createDrag, frameInterval } from './drag';
+import { createIdentityClient, IdentityError } from './identity';
+import { createSessionStore } from './secrets';
+import { createSessionManager, type SessionManager } from './session';
+import { signInWindowOptions } from './signin';
 import { orbRestingPlace, orbWindowOptions } from './orb';
 import { isAllowedNavigation } from './security';
 
@@ -131,11 +148,91 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on('window-all-closed', () => app.quit());
 
+  let signIn: BrowserWindow | null = null;
+  let sessions: SessionManager | null = null;
+
+  const broadcast = (state: SignedInState): void => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) {
+        window.webContents.send(authChangedChannel, state);
+      }
+    }
+  };
+
+  const openSignIn = (): void => {
+    if (signIn && !signIn.isDestroyed()) {
+      signIn.show();
+      signIn.focus();
+      return;
+    }
+    signIn = new BrowserWindow(signInWindowOptions(join(here, '../preload/index.cjs')));
+    signIn.once('ready-to-show', () => signIn?.show());
+    signIn.webContents.once('did-finish-load', () => signIn?.show());
+    signIn.on('closed', () => {
+      signIn = null;
+    });
+    load(signIn, rendererPage('index.html'));
+  };
+
   void app.whenReady().then(() => {
     session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) =>
       callback(false),
     );
     session.defaultSession.setPermissionCheckHandler(() => false);
+    const config = readConfig();
+    const secretFile = join(app.getPath('userData'), 'session.bin');
+    const store = createSessionStore(safeStorage, {
+      read: () => {
+        try {
+          return readFileSync(secretFile);
+        } catch {
+          return null;
+        }
+      },
+      write: (contents) => writeFileSync(secretFile, contents, { mode: 0o600 }),
+      remove: () => rmSync(secretFile, { force: true }),
+    });
+    sessions = createSessionManager({
+      client: createIdentityClient({
+        baseUrl: config.identityUrl,
+        fetch: (url, init) => fetch(url, init),
+      }),
+      store,
+      onChange: broadcast,
+    });
+
+    ipcMain.handle(authStateChannel, () => sessions?.state() ?? { status: 'signed-out' });
+    ipcMain.handle(
+      authSignInChannel,
+      async (_event, email: unknown, password: unknown): Promise<SignInResult> => {
+        if (
+          typeof email !== 'string' ||
+          typeof password !== 'string' ||
+          email === '' ||
+          password === ''
+        ) {
+          return { ok: false, reason: 'invalid' };
+        }
+        try {
+          return { ok: true, state: await sessions!.signIn(email, password) };
+        } catch (error) {
+          return {
+            ok: false,
+            reason:
+              error instanceof IdentityError && error.reason === 'credentials'
+                ? 'credentials'
+                : 'unavailable',
+          };
+        }
+      },
+    );
+    ipcMain.handle(
+      authSignOutChannel,
+      async () => (await sessions?.signOut()) ?? { status: 'signed-out' },
+    );
+    ipcMain.on(orbClickChannel, () => openSignIn());
+
     createOrb();
+    void sessions.restore();
   });
 }

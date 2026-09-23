@@ -1,8 +1,12 @@
 import { useCallback, useRef, type PointerEvent } from 'react';
 import './orb.css';
 
+const clickSlack = 5;
+
 export function Orb() {
   const dragging = useRef(false);
+  const origin = useRef<{ x: number; y: number } | null>(null);
+  const moved = useRef(false);
 
   const beginDrag = useCallback((event: PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) {
@@ -11,13 +15,24 @@ export function Orb() {
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     dragging.current = true;
+    moved.current = false;
+    origin.current = { x: event.screenX, y: event.screenY };
     window.sifer.orb.beginDrag({ x: event.screenX, y: event.screenY });
   }, []);
 
   const continueDrag = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    if (dragging.current) {
-      window.sifer.orb.dragTo({ x: event.screenX, y: event.screenY });
+    if (!dragging.current) {
+      return;
     }
+    const start = origin.current;
+    if (
+      start &&
+      (Math.abs(event.screenX - start.x) > clickSlack ||
+        Math.abs(event.screenY - start.y) > clickSlack)
+    ) {
+      moved.current = true;
+    }
+    window.sifer.orb.dragTo({ x: event.screenX, y: event.screenY });
   }, []);
 
   const endDrag = useCallback((event: PointerEvent<HTMLDivElement>) => {
@@ -29,6 +44,9 @@ export function Orb() {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
     window.sifer.orb.endDrag();
+    if (!moved.current) {
+      window.sifer.orb.click();
+    }
   }, []);
 
   return (

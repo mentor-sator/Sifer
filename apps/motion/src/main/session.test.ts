@@ -75,6 +75,15 @@ describe('createSessionManager', () => {
     expect(changes.at(-1)).toEqual({ status: 'signed-in', email });
   });
 
+  it('stores the email the way identity stores it', async () => {
+    const session = manager();
+    expect(await session.signIn('  Ninette@Example.COM ', 'correct horse battery staple')).toEqual({
+      status: 'signed-in',
+      email,
+    });
+    expect(login).toHaveBeenCalledWith(email, 'correct horse battery staple');
+  });
+
   it('reports bad credentials without saving anything', async () => {
     const { store, peek } = memoryStore();
     login.mockRejectedValueOnce(new IdentityError('credentials', 'no'));

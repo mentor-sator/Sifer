@@ -76,8 +76,9 @@ export function createSessionManager(options: SessionOptions) {
     },
 
     async signIn(address: string, password: string): Promise<SignedInState> {
-      const fresh = await options.client.login(address, password);
-      remember(address, fresh);
+      const normalized = address.trim().toLowerCase();
+      const fresh = await options.client.login(normalized, password);
+      remember(normalized, fresh);
       return state();
     },
 
