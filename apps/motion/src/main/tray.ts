@@ -11,6 +11,8 @@ export interface TrayActions {
   openSignIn: () => void;
   signOut: () => void;
   quit: () => void;
+  demoState?: (() => void) | undefined;
+  demoLabel?: string;
 }
 
 export function trayTooltip(state: TrayState): string {
@@ -44,6 +46,12 @@ export function trayMenu(state: TrayState, actions: TrayActions): MenuItemConstr
       enabled: signedIn,
       click: actions.signOut,
     },
+    ...(actions.demoState
+      ? ([
+          { type: 'separator' },
+          { label: actions.demoLabel ?? 'Demo: toggle the reading ring', click: actions.demoState },
+        ] satisfies MenuItemConstructorOptions[])
+      : []),
     { type: 'separator' },
     { label: 'Quit Sifer Motion', click: actions.quit },
   ];

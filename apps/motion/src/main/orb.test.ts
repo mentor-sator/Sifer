@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { orbRestingPlace, orbSize, orbWindowOptions } from './orb';
+import { orbRestingPlace, orbSize, orbStateFor, orbWindowOptions } from './orb';
 
 describe('orbWindowOptions', () => {
   const options = orbWindowOptions('/app/preload.cjs');
@@ -48,5 +48,20 @@ describe('orbRestingPlace', () => {
 
   it('uses a 72 pixel orb by default', () => {
     expect(orbSize).toBe(72);
+  });
+});
+
+describe('orbStateFor', () => {
+  const signedIn = { status: 'signed-in', email: 'ninette@example.com' } as const;
+  const signedOut = { status: 'signed-out' } as const;
+
+  it('shows the signed-out ring until someone signs in', () => {
+    expect(orbStateFor(signedOut, 'idle')).toBe('signed-out');
+    expect(orbStateFor(signedOut, 'reading')).toBe('signed-out');
+  });
+
+  it('follows the activity once signed in', () => {
+    expect(orbStateFor(signedIn, 'idle')).toBe('idle');
+    expect(orbStateFor(signedIn, 'reading')).toBe('reading');
   });
 });

@@ -1,4 +1,5 @@
 import type { BrowserWindowConstructorOptions, Rectangle } from 'electron';
+import type { OrbState, SignedInState } from '../shared/bridge';
 import { hardenedWebPreferences } from './security';
 
 export const orbSize = 72;
@@ -34,4 +35,13 @@ export function orbRestingPlace(
   const x = workArea.x + Math.max(workArea.width - size - margin, 0);
   const y = workArea.y + Math.max(workArea.height - size - margin, 0);
   return { x: Math.round(x), y: Math.round(y) };
+}
+
+export type Activity = 'idle' | 'reading';
+
+export function orbStateFor(session: SignedInState, activity: Activity): OrbState {
+  if (session.status !== 'signed-in') {
+    return 'signed-out';
+  }
+  return activity;
 }

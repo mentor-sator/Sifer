@@ -9,11 +9,14 @@ export interface PointerPoint {
   readonly y: number;
 }
 
+export type OrbState = 'signed-out' | 'idle' | 'reading';
+
 export interface OrbControls {
   beginDrag(pointer: PointerPoint): void;
   dragTo(pointer: PointerPoint): void;
   endDrag(): void;
   click(): void;
+  onState(listener: (state: OrbState) => void): () => void;
 }
 
 export type SignedInState = { status: 'signed-out' } | { status: 'signed-in'; email: string };
@@ -37,6 +40,7 @@ export interface SiferBridge {
 }
 
 export const orbClickChannel = 'sifer:orb-click';
+export const orbStateChannel = 'sifer:orb-state';
 export const authStateChannel = 'sifer:auth-state';
 export const authSignInChannel = 'sifer:auth-sign-in';
 export const authSignOutChannel = 'sifer:auth-sign-out';

@@ -8,6 +8,8 @@ import {
   orbDragBeginChannel,
   orbDragEndChannel,
   orbDragMoveChannel,
+  orbStateChannel,
+  type OrbState,
   type PointerPoint,
   type SiferBridge,
   type SignedInState,
@@ -26,6 +28,13 @@ const bridge: SiferBridge = {
     dragTo: (pointer: PointerPoint) => ipcRenderer.send(orbDragMoveChannel, pointer.x, pointer.y),
     endDrag: () => ipcRenderer.send(orbDragEndChannel),
     click: () => ipcRenderer.send(orbClickChannel),
+    onState: (listener: (state: OrbState) => void) => {
+      const forward = (_event: unknown, state: OrbState): void => listener(state);
+      ipcRenderer.on(orbStateChannel, forward);
+      return () => {
+        ipcRenderer.removeListener(orbStateChannel, forward);
+      };
+    },
   },
   auth: {
     state: () => ipcRenderer.invoke(authStateChannel) as Promise<SignedInState>,

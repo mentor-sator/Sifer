@@ -1,12 +1,16 @@
-import { useCallback, useRef, type PointerEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
+import type { OrbState } from '../../shared/bridge';
 import './orb.css';
 
 const clickSlack = 5;
 
 export function Orb() {
+  const [state, setState] = useState<OrbState>('signed-out');
   const dragging = useRef(false);
   const origin = useRef<{ x: number; y: number } | null>(null);
   const moved = useRef(false);
+
+  useEffect(() => window.sifer.orb.onState(setState), []);
 
   const beginDrag = useCallback((event: PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) {
@@ -51,13 +55,15 @@ export function Orb() {
 
   return (
     <div
-      className="orb"
-      aria-label="Sifer"
+      className={`orb ${state}`}
+      aria-label={`Sifer (${state.replace('-', ' ')})`}
       onPointerDown={beginDrag}
       onPointerMove={continueDrag}
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
       onDragStart={(event) => event.preventDefault()}
-    />
+    >
+      <span className="ring" />
+    </div>
   );
 }

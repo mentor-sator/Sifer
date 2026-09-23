@@ -21,6 +21,7 @@ import {
   orbDragBeginChannel,
   orbDragEndChannel,
   orbDragMoveChannel,
+  orbStateChannel,
   type SignedInState,
   type SignInResult,
 } from '../shared/bridge';
@@ -32,7 +33,7 @@ import { createSessionManager, type SessionManager } from './session';
 import { signInWindowOptions } from './signin';
 import { trayIcon } from './icon';
 import { trayMenu, trayTooltip, type TrayState } from './tray';
-import { orbRestingPlace, orbWindowOptions } from './orb';
+import { orbRestingPlace, orbStateFor, orbWindowOptions, type Activity } from './orb';
 import { isAllowedNavigation } from './security';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -52,44 +53,44 @@ function load(window: BrowserWindow, page: RendererPage): void {
 }
 
 function createOrb(): BrowserWindow {
-  const orb = new BrowserWindow(orbWindowOptions(join(here, '../preload/index.cjs')));
-  orb.setAlwaysOnTop(true, 'screen-saver');
-  orb.setPosition(...positionFor(orb));
+  const created = new BrowserWindow(orbWindowOptions(join(here, '../preload/index.cjs')));
+  created.setAlwaysOnTop(true, 'screen-saver');
+  created.setPosition(...positionFor(created));
 
   let shown = false;
   const reveal = (): void => {
-    if (shown || orb.isDestroyed()) {
+    if (shown || created.isDestroyed()) {
       return;
     }
     shown = true;
-    orb.setPosition(...positionFor(orb));
-    orb.showInactive();
-    report(orb);
+    created.setPosition(...positionFor(created));
+    created.showInactive();
+    report(created);
   };
-  orb.once('ready-to-show', reveal);
-  orb.webContents.once('did-finish-load', reveal);
-  orb.webContents.on('render-process-gone', (_event, details) =>
+  created.once('ready-to-show', reveal);
+  created.webContents.once('did-finish-load', reveal);
+  created.webContents.on('render-process-gone', (_event, details) =>
     console.error('orb renderer gone', details.reason),
   );
-  orb.webContents.on('did-fail-load', (_event, code, description, url) =>
+  created.webContents.on('did-fail-load', (_event, code, description, url) =>
     console.error('orb failed to load', code, description, url),
   );
 
-  attachDragging(orb);
-  load(orb, rendererPage('orb.html'));
-  return orb;
+  attachDragging(created);
+  load(created, rendererPage('orb.html'));
+  return created;
 }
 
-function attachDragging(orb: BrowserWindow): void {
+function attachDragging(created: BrowserWindow): void {
   let pointer = { x: 0, y: 0 };
   const drag = createDrag({
     cursor: () => pointer,
-    position: () => orb.getBounds(),
-    size: () => orb.getBounds(),
+    position: () => created.getBounds(),
+    size: () => created.getBounds(),
     workArea: () => screen.getDisplayNearestPoint(pointer).workArea,
     move: (x, y) => {
-      if (!orb.isDestroyed()) {
-        orb.setPosition(x, y, false);
+      if (!created.isDestroyed()) {
+        created.setPosition(x, y, false);
       }
     },
     start: (tick) => setInterval(tick, frameInterval),
@@ -97,7 +98,7 @@ function attachDragging(orb: BrowserWindow): void {
   });
 
   const readPointer = (event: Electron.IpcMainEvent, x: unknown, y: unknown): boolean => {
-    if (event.sender !== orb.webContents || !Number.isFinite(x) || !Number.isFinite(y)) {
+    if (event.sender !== created.webContents || !Number.isFinite(x) || !Number.isFinite(y)) {
       return false;
     }
     pointer = { x: x as number, y: y as number };
@@ -113,18 +114,18 @@ function attachDragging(orb: BrowserWindow): void {
     readPointer(event, x, y);
   });
   ipcMain.on(orbDragEndChannel, (event) => {
-    if (event.sender === orb.webContents) {
+    if (event.sender === created.webContents) {
       drag.end();
     }
   });
-  orb.on('closed', () => drag.end());
+  created.on('closed', () => drag.end());
 }
 
-function report(orb: BrowserWindow): void {
-  const bounds = orb.getBounds();
+function report(created: BrowserWindow): void {
+  const bounds = created.getBounds();
   const display = screen.getDisplayNearestPoint({ x: bounds.x, y: bounds.y });
   console.log(
-    `orb visible=${orb.isVisible()} onTop=${orb.isAlwaysOnTop()} at=${bounds.x},${bounds.y} size=${bounds.width}x${bounds.height} ` +
+    `created visible=${created.isVisible()} onTop=${created.isAlwaysOnTop()} at=${bounds.x},${bounds.y} size=${bounds.width}x${bounds.height} ` +
       `display=${display.workArea.width}x${display.workArea.height}+${display.workArea.x}+${display.workArea.y} scale=${display.scaleFactor}`,
   );
 }
@@ -174,6 +175,7 @@ if (!app.requestSingleInstanceLock()) {
   let orb: BrowserWindow | null = null;
   let tray: Tray | null = null;
   let quitting = false;
+  let activity: Activity = 'idle';
 
   const broadcast = (state: SignedInState): void => {
     for (const window of BrowserWindow.getAllWindows()) {
@@ -182,6 +184,16 @@ if (!app.requestSingleInstanceLock()) {
       }
     }
     refreshTray();
+    publishOrbState();
+  };
+
+  const publishOrbState = (): void => {
+    if (orb && !orb.isDestroyed()) {
+      orb.webContents.send(
+        orbStateChannel,
+        orbStateFor(sessions?.state() ?? { status: 'signed-out' }, activity),
+      );
+    }
   };
 
   const trayState = (): TrayState => ({
@@ -215,6 +227,15 @@ if (!app.requestSingleInstanceLock()) {
             quitting = true;
             app.quit();
           },
+          demoState: app.isPackaged
+            ? undefined
+            : () => {
+                activity = activity === 'reading' ? 'idle' : 'reading';
+                publishOrbState();
+                refreshTray();
+              },
+          demoLabel:
+            activity === 'reading' ? 'Demo: stop the reading ring' : 'Demo: show the reading ring',
         }),
       ),
     );
@@ -304,6 +325,7 @@ if (!app.requestSingleInstanceLock()) {
     orb = createOrb();
     orb.on('show', refreshTray);
     orb.on('hide', refreshTray);
+    orb.webContents.on('did-finish-load', publishOrbState);
     createTray();
     void sessions.restore();
   });

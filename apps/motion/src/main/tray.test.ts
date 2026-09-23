@@ -55,6 +55,25 @@ describe('trayMenu', () => {
   });
 });
 
+describe('the development helper', () => {
+  it('is absent unless a demo action is supplied', () => {
+    expect(labels(signedIn).some((label) => String(label).startsWith('Demo'))).toBe(false);
+  });
+
+  it('appears with its own label when supplied', () => {
+    const demoState = vi.fn();
+    const menu = trayMenu(signedIn, {
+      ...actions(),
+      demoState,
+      demoLabel: 'Demo: show the reading ring',
+    });
+    const item = menu.find((entry) => entry.label === 'Demo: show the reading ring');
+    expect(item).toBeTruthy();
+    item?.click?.(undefined as never, undefined, undefined as never);
+    expect(demoState).toHaveBeenCalledOnce();
+  });
+});
+
 describe('trayTooltip', () => {
   it('says who is signed in, or that Sifer is stopped', () => {
     expect(trayTooltip(signedIn)).toBe('Sifer - ninette@example.com');
