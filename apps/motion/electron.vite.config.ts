@@ -1,6 +1,20 @@
 import { resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'electron-vite';
+import type { Plugin } from 'vite';
+import { contentSecurityPolicy, cspPlaceholder } from './src/shared/csp';
+
+function siferContentSecurityPolicy(): Plugin {
+  return {
+    name: 'sifer-content-security-policy',
+    transformIndexHtml: {
+      order: 'post',
+      handler(html, context) {
+        return html.replace(cspPlaceholder, contentSecurityPolicy(Boolean(context.server)));
+      },
+    },
+  };
+}
 
 export default defineConfig({
   main: {},
@@ -20,6 +34,6 @@ export default defineConfig({
         },
       },
     },
-    plugins: [react()],
+    plugins: [react(), siferContentSecurityPolicy()],
   },
 });
