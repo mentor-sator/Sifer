@@ -1,6 +1,8 @@
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { app, BrowserWindow, screen, session } from 'electron';
+import { app, BrowserWindow, ipcMain, screen, session } from 'electron';
+import { orbDragBeginChannel, orbDragEndChannel, orbDragMoveChannel } from '../shared/bridge';
+import { createDrag, frameInterval } from './drag';
 import { orbRestingPlace, orbWindowOptions } from './orb';
 import { isAllowedNavigation } from './security';
 
@@ -44,8 +46,49 @@ function createOrb(): BrowserWindow {
     console.error('orb failed to load', code, description, url),
   );
 
+  attachDragging(orb);
   load(orb, rendererPage('orb.html'));
   return orb;
+}
+
+function attachDragging(orb: BrowserWindow): void {
+  let pointer = { x: 0, y: 0 };
+  const drag = createDrag({
+    cursor: () => pointer,
+    position: () => orb.getBounds(),
+    size: () => orb.getBounds(),
+    workArea: () => screen.getDisplayNearestPoint(pointer).workArea,
+    move: (x, y) => {
+      if (!orb.isDestroyed()) {
+        orb.setPosition(x, y, false);
+      }
+    },
+    start: (tick) => setInterval(tick, frameInterval),
+    stop: (handle) => clearInterval(handle as NodeJS.Timeout),
+  });
+
+  const readPointer = (event: Electron.IpcMainEvent, x: unknown, y: unknown): boolean => {
+    if (event.sender !== orb.webContents || !Number.isFinite(x) || !Number.isFinite(y)) {
+      return false;
+    }
+    pointer = { x: x as number, y: y as number };
+    return true;
+  };
+
+  ipcMain.on(orbDragBeginChannel, (event, x, y) => {
+    if (readPointer(event, x, y)) {
+      drag.begin();
+    }
+  });
+  ipcMain.on(orbDragMoveChannel, (event, x, y) => {
+    readPointer(event, x, y);
+  });
+  ipcMain.on(orbDragEndChannel, (event) => {
+    if (event.sender === orb.webContents) {
+      drag.end();
+    }
+  });
+  orb.on('closed', () => drag.end());
 }
 
 function report(orb: BrowserWindow): void {
@@ -59,8 +102,7 @@ function report(orb: BrowserWindow): void {
 
 function positionFor(orb: BrowserWindow): [number, number] {
   const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-  const [width] = orb.getSize();
-  const place = orbRestingPlace(display.workArea, width);
+  const place = orbRestingPlace(display.workArea, orb.getBounds().width);
   return [place.x, place.y];
 }
 

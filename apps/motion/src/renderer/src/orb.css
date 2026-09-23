@@ -7,7 +7,11 @@ body {
   background: transparent;
   overflow: hidden;
   user-select: none;
-  cursor: default;
+  cursor: grab;
+}
+
+body:active {
+  cursor: grabbing;
 }
 
 .orb {
@@ -17,6 +21,7 @@ body {
   background:
     radial-gradient(circle at 34% 30%, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0) 45%),
     radial-gradient(circle at 50% 50%, #3d6bff 0%, #1b2f8f 70%, #101a4d 100%);
+  -webkit-user-drag: none;
   box-shadow:
     0 6px 18px rgba(0, 0, 0, 0.45),
     inset 0 0 12px rgba(255, 255, 255, 0.18);
