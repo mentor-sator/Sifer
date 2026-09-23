@@ -1,27 +1,39 @@
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { app, BrowserWindow, session } from 'electron';
-import { hardenedWebPreferences, isAllowedNavigation } from './security';
+import { app, BrowserWindow, screen, session } from 'electron';
+import { orbRestingPlace, orbWindowOptions } from './orb';
+import { isAllowedNavigation } from './security';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const devServerUrl = process.env['ELECTRON_RENDERER_URL'];
 
-function createWindow(): BrowserWindow {
-  const window = new BrowserWindow({
-    width: 440,
-    height: 300,
-    show: false,
-    title: 'Sifer Motion',
-    autoHideMenuBar: true,
-    webPreferences: hardenedWebPreferences(join(here, '../preload/index.cjs')),
-  });
-  window.once('ready-to-show', () => window.show());
+type RendererPage = { kind: 'url'; value: string } | { kind: 'file'; value: string };
+
+function rendererPage(page: string): RendererPage {
   if (devServerUrl) {
-    void window.loadURL(devServerUrl);
-  } else {
-    void window.loadFile(join(here, '../renderer/index.html'));
+    return { kind: 'url', value: new URL(page, devServerUrl).toString() };
   }
-  return window;
+  return { kind: 'file', value: join(here, '../renderer', page) };
+}
+
+function load(window: BrowserWindow, page: RendererPage): void {
+  void (page.kind === 'url' ? window.loadURL(page.value) : window.loadFile(page.value));
+}
+
+function createOrb(): BrowserWindow {
+  const orb = new BrowserWindow(orbWindowOptions(join(here, '../preload/index.cjs')));
+  orb.setAlwaysOnTop(true, 'screen-saver');
+  orb.setPosition(...positionFor(orb));
+  orb.once('ready-to-show', () => orb.showInactive());
+  load(orb, rendererPage('orb.html'));
+  return orb;
+}
+
+function positionFor(orb: BrowserWindow): [number, number] {
+  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  const [width] = orb.getSize();
+  const place = orbRestingPlace(display.workArea, width);
+  return [place.x, place.y];
 }
 
 if (!app.requestSingleInstanceLock()) {
@@ -44,12 +56,7 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on('second-instance', () => {
     const [existing] = BrowserWindow.getAllWindows();
-    if (existing) {
-      if (existing.isMinimized()) {
-        existing.restore();
-      }
-      existing.focus();
-    }
+    existing?.showInactive();
   });
 
   app.on('window-all-closed', () => app.quit());
@@ -59,6 +66,6 @@ if (!app.requestSingleInstanceLock()) {
       callback(false),
     );
     session.defaultSession.setPermissionCheckHandler(() => false);
-    createWindow();
+    createOrb();
   });
 }
