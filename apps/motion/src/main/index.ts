@@ -1,7 +1,17 @@
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { app, BrowserWindow, ipcMain, safeStorage, screen, session } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  Menu,
+  nativeImage,
+  safeStorage,
+  screen,
+  session,
+  Tray,
+} from 'electron';
 import {
   authChangedChannel,
   authSignInChannel,
@@ -20,6 +30,8 @@ import { createIdentityClient, IdentityError } from './identity';
 import { createSessionStore } from './secrets';
 import { createSessionManager, type SessionManager } from './session';
 import { signInWindowOptions } from './signin';
+import { trayIcon } from './icon';
+import { trayMenu, trayTooltip, type TrayState } from './tray';
 import { orbRestingPlace, orbWindowOptions } from './orb';
 import { isAllowedNavigation } from './security';
 
@@ -146,10 +158,22 @@ if (!app.requestSingleInstanceLock()) {
     existing?.showInactive();
   });
 
-  app.on('window-all-closed', () => app.quit());
+  app.on('window-all-closed', () => {
+    if (quitting) {
+      app.quit();
+    }
+  });
+
+  app.on('before-quit', () => {
+    quitting = true;
+    tray?.destroy();
+  });
 
   let signIn: BrowserWindow | null = null;
   let sessions: SessionManager | null = null;
+  let orb: BrowserWindow | null = null;
+  let tray: Tray | null = null;
+  let quitting = false;
 
   const broadcast = (state: SignedInState): void => {
     for (const window of BrowserWindow.getAllWindows()) {
@@ -157,7 +181,52 @@ if (!app.requestSingleInstanceLock()) {
         window.webContents.send(authChangedChannel, state);
       }
     }
+    refreshTray();
   };
+
+  const trayState = (): TrayState => ({
+    session: sessions?.state() ?? { status: 'signed-out' },
+    orbVisible: Boolean(orb && !orb.isDestroyed() && orb.isVisible()),
+  });
+
+  function refreshTray(): void {
+    if (!tray || tray.isDestroyed()) {
+      return;
+    }
+    const state = trayState();
+    tray.setToolTip(trayTooltip(state));
+    tray.setContextMenu(
+      Menu.buildFromTemplate(
+        trayMenu(state, {
+          toggleOrb: () => {
+            if (!orb || orb.isDestroyed()) {
+              return;
+            }
+            if (orb.isVisible()) {
+              orb.hide();
+            } else {
+              orb.showInactive();
+            }
+            refreshTray();
+          },
+          openSignIn: () => openSignIn(),
+          signOut: () => void sessions?.signOut(),
+          quit: () => {
+            quitting = true;
+            app.quit();
+          },
+        }),
+      ),
+    );
+  }
+
+  function createTray(): void {
+    const image = nativeImage.createFromDataURL(trayIcon.small);
+    image.addRepresentation({ scaleFactor: 2, dataURL: trayIcon.large });
+    tray = new Tray(image);
+    tray.on('click', () => openSignIn());
+    refreshTray();
+  }
 
   const openSignIn = (): void => {
     if (signIn && !signIn.isDestroyed()) {
@@ -232,7 +301,10 @@ if (!app.requestSingleInstanceLock()) {
     );
     ipcMain.on(orbClickChannel, () => openSignIn());
 
-    createOrb();
+    orb = createOrb();
+    orb.on('show', refreshTray);
+    orb.on('hide', refreshTray);
+    createTray();
     void sessions.restore();
   });
 }
