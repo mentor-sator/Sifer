@@ -1,0 +1,82 @@
+:root {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: #12142a;
+  color: #e9ecff;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 28px 32px;
+}
+
+h1 {
+  margin: 0 0 8px;
+  font-size: 22px;
+  font-weight: 600;
+}
+
+label {
+  font-size: 13px;
+  color: #aab0d8;
+}
+
+input {
+  padding: 9px 11px;
+  border: 1px solid #343a63;
+  border-radius: 6px;
+  background: #1b1e3c;
+  color: inherit;
+  font-size: 14px;
+}
+
+input:focus {
+  outline: 2px solid #3d6bff;
+  outline-offset: 1px;
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+button {
+  margin-top: 10px;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 6px;
+  background: #3d6bff;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:disabled {
+  background: #2a3050;
+  cursor: default;
+}
+
+.error {
+  margin: 4px 0 0;
+  color: #ff9c9c;
+  font-size: 13px;
+}
+
+.who {
+  margin: 0;
+  font-size: 15px;
+}
+
+.runtime {
+  margin-top: auto;
+  color: #6e75a8;
+  font-size: 11px;
+}

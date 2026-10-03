@@ -1,0 +1,24 @@
+appId: app.sifer.motion
+productName: Sifer Motion
+executableName: SiferMotion
+copyright: Copyright Sifer
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+asar: true
+npmRebuild: false
+electronLanguages:
+  - en-US
+win:
+  target: dir
+  requestedExecutionLevel: asInvoker
+  signtoolOptions:
+    certificateSha1: C8DBC5E9EB36C7A7CD46118940D3F270B0FCB051
+    signingHashAlgorithms:
+      - sha256
+    rfc3161TimeStampServer: http://timestamp.digicert.com
+linux:
+  target: dir

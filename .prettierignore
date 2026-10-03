@@ -1,0 +1,5 @@
+pnpm-lock.yaml
+**/*.md
+secrets/
+tools/eslint-plugin-sifer/test/fixtures/
+gen/

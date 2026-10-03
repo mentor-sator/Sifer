@@ -1,0 +1,246 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TURBO_TELEMETRY_DISABLED: '1'
+
+jobs:
+  verify:
+    name: Verify (format, lint, typecheck, test, contracts, build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: actions/checkout v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: buf 1.47.2 (checksum verified)
+        run: |
+          curl --fail --silent --show-error --location --retry 3 -o /tmp/buf https://github.com/bufbuild/buf/releases/download/v1.47.2/buf-Linux-x86_64
+          echo "3a0c4da8d46eea8136affa63db202c76a44f8112384160b73c3fffb1cf14b5d8  /tmp/buf" | sha256sum --check --strict
+          sudo install -m 0755 /tmp/buf /usr/local/bin/buf
+          buf --version
+
+      - name: pnpm/action-setup v6.1.0 (version from packageManager)
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+
+      - name: actions/setup-node v7.0.0 (version from .node-version)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: actions/setup-go v7.0.0 (version from go.mod)
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: uv 0.12.17 (checksum verified)
+        run: |
+          curl --fail --silent --show-error --location --retry 3 -o /tmp/uv.tar.gz https://github.com/astral-sh/uv/releases/download/0.12.17/uv-x86_64-unknown-linux-gnu.tar.gz
+          echo "fa82fd8dde8e8eefdecada6aa0889666556cfceb690d06e0c3bca49eb3070a63  /tmp/uv.tar.gz" | sha256sum --check --strict
+          tar -xzf /tmp/uv.tar.gz -C /tmp
+          sudo install -m 0755 /tmp/uv-x86_64-unknown-linux-gnu/uv /usr/local/bin/uv
+          uv --version
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify (format, lint, typecheck, test)
+        run: pwsh -NoProfile -File tools/Verify.ps1
+
+      - name: Contracts (buf breaking against the previous state of main)
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+            BASE="$(git rev-parse HEAD~1)"
+          fi
+          if git cat-file -e "${BASE}:buf.yaml" 2>/dev/null; then
+            buf breaking --against ".git#ref=${BASE}"
+          else
+            echo "no buf.yaml at ${BASE}; nothing to compare"
+          fi
+
+      - name: Generated code matches the contracts
+        run: |
+          buf generate
+          if [ -n "$(git status --porcelain)" ]; then
+            git status --porcelain
+            echo "generated code is stale: run 'just gen' and commit"
+            exit 1
+          fi
+      - name: Build
+        run: pnpm build
+
+  deploy:
+    name: Deploy stack (compose.deploy.yml — P0 services, gateway and orchestrator over mTLS)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      COMPOSE_FILE: compose.deploy.yml
+    steps:
+      - name: actions/checkout v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Generate throwaway credentials
+        run: |
+          for name in POSTGRES_PASSWORD REDIS_PASSWORD QDRANT_API_KEY SILO_ROOT_PASSWORD LIVEKIT_API_SECRET IDENTITY_DB_PASSWORD; do
+            value="$(openssl rand -hex 32)"
+            echo "::add-mask::$value"
+            echo "$name=$value" >> "$GITHUB_ENV"
+          done
+
+      - name: Generate throwaway mTLS certificates
+        run: |
+          dir="$RUNNER_TEMP/sifer-tls"
+          bash infra/deploy/make-certs.sh "$dir"
+          sudo chown 10001:10001 "$dir/orchestrator.key"
+          sudo chown 65532:65532 "$dir/edge-gateway.key"
+          openssl verify -CAfile "$dir/ca.crt" "$dir/orchestrator.crt" "$dir/edge-gateway.crt"
+          echo "SIFER_TLS_DIR=$dir" >> "$GITHUB_ENV"
+
+      - name: Validate compose files
+        run: docker compose config --quiet
+
+      - name: Build and start stack
+        run: docker compose up --build --detach --wait --wait-timeout 300
+
+      - name: Smoke test P0 services
+        run: |
+          docker compose exec -T postgres pg_isready -U postgres
+          docker compose exec -T redis sh -c 'redis-cli --no-auth-warning -a "$REDIS_PASSWORD" ping' | grep -q PONG
+          curl --fail --silent --show-error -H "api-key: $QDRANT_API_KEY" http://127.0.0.1:6333/collections
+          curl --fail --silent --show-error http://127.0.0.1:9000/minio/health/live
+          curl --fail --silent --show-error http://127.0.0.1:7880/
+          docker compose exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" postgres psql -h pgbouncer -p 6432 -U postgres -d postgres -tAc 'select 1' | grep -qx 1
+
+      - name: Images run as non-root
+        run: |
+          for image in sifer/edge-gateway:deploy sifer/orchestrator:deploy; do
+            user="$(docker image inspect --format '{{.Config.User}}' "$image")"
+            echo "$image runs as '$user'"
+            case "$user" in ''|root|0|0:0|root:root) exit 1 ;; esac
+          done
+
+      - name: Echo through the gateway over mTLS
+        run: |
+          status="$(curl --silent --output /tmp/ok.json --write-out '%{http_code}' -X POST http://127.0.0.1:8080/v1/echo -d '{"schemaMajor":1}')"
+          echo "schemaMajor 1 -> $status $(cat /tmp/ok.json)"
+          [ "$status" = 200 ]
+          status="$(curl --silent --output /tmp/stale.json --write-out '%{http_code}' -X POST http://127.0.0.1:8080/v1/echo -d '{"schemaMajor":2}')"
+          echo "schemaMajor 2 -> $status $(cat /tmp/stale.json)"
+          [ "$status" = 409 ]
+
+      - name: Orchestrator is private and refuses callers without a client certificate
+        run: |
+          ports="$(docker inspect --format '{{json .NetworkSettings.Ports}}' "$(docker compose ps -q orchestrator)")"
+          echo "orchestrator ports: $ports"
+          if echo "$ports" | grep -q HostPort; then
+            echo "orchestrator is published to the host"
+            exit 1
+          fi
+          docker compose exec -T orchestrator python - <<'EOF'
+          import grpc
+          from sifer.v1 import envelope_pb2, orchestrator_pb2, orchestrator_pb2_grpc
+
+          request = orchestrator_pb2.EchoRequest(envelope=envelope_pb2.Envelope(schema_major=1))
+          with open("/run/secrets/sifer-ca", "rb") as ca_file:
+              ca = ca_file.read()
+          attempts = {
+              "plaintext": grpc.insecure_channel("orchestrator:8083"),
+              "TLS without a client certificate": grpc.secure_channel(
+                  "orchestrator:8083", grpc.ssl_channel_credentials(ca)
+              ),
+          }
+          for name, channel in attempts.items():
+              try:
+                  orchestrator_pb2_grpc.OrchestratorServiceStub(channel).Echo(request, timeout=5)
+              except grpc.RpcError as error:
+                  print(f"{name}: refused ({error.code().name})")
+              else:
+                  raise SystemExit(f"{name}: accepted, mTLS is not enforced")
+          EOF
+
+      - name: Atlas CLI (arigaio/atlas 1.3.3, pinned by digest)
+        run: |
+          sudo tee /usr/local/bin/atlas > /dev/null <<'EOF'
+          #!/bin/sh
+          exec docker run --rm --network host -v "$PWD:/work" -w /work arigaio/atlas:1.3.3@sha256:07f3f92fa46e684ed789d5ef344a25494a4fa6844ef1ea1fa4e138522c2c37ac "$@"
+          EOF
+          sudo chmod +x /usr/local/bin/atlas
+          atlas version
+
+      - name: Seed against containerised PostgreSQL
+        shell: pwsh
+        run: |
+          Import-Module ./tools/Database.psm1 -Force
+          $target = Get-SiferDbTarget -Port 5432 -Password $env:POSTGRES_PASSWORD -RolePasswords @{ sifer_identity = $env:IDENTITY_DB_PASSWORD }
+          Reset-SiferDatabase -Target $target
+          $schemas = @(Get-SiferDbSchemas -Target $target)
+          $expected = @(Get-ChildItem db/migrations -Directory | ForEach-Object Name)
+          $missing = @($expected | Where-Object { $_ -notin $schemas })
+          if ($missing.Count -gt 0) { throw "Schemas missing after seed: $($missing -join ', ')" }
+          "schemas present: $($expected -join ', ')"
+          Invoke-SiferMigrate -Target $target
+          Reset-SiferDatabase -Target $target
+
+      - name: sifer_identity is confined to the identity schema
+        shell: pwsh
+        run: |
+          $env:PGPASSWORD = $env:IDENTITY_DB_PASSWORD
+          function Invoke-AsIdentity([string]$Database, [string]$Sql) {
+            $output = & psql -X -q -At -v ON_ERROR_STOP=1 -h 127.0.0.1 -p 5432 -U sifer_identity -d $Database -c $Sql 2>&1
+            [pscustomobject]@{ Ok = ($LASTEXITCODE -eq 0); Output = "$output" }
+          }
+          $allowed = @(
+            "SELECT count(*) FROM identity.user_account",
+            "INSERT INTO identity.user_account (email) VALUES ('ci@sifer.test') RETURNING 1",
+            "UPDATE identity.user_account SET display_name = 'ci' WHERE email = 'ci@sifer.test' RETURNING 1"
+          )
+          foreach ($sql in $allowed) {
+            $result = Invoke-AsIdentity 'sifer' $sql
+            if (-not $result.Ok) { throw "refused but should be allowed: $sql -> $($result.Output)" }
+            "allowed: $sql"
+          }
+          $denied = [ordered]@{
+            'sifer'    = @(
+              "DELETE FROM identity.user_account",
+              "CREATE TABLE identity.intruder (x int)",
+              "DROP TABLE identity.refresh_token",
+              "CREATE TABLE public.intruder (x int)",
+              "CREATE TABLE memory.intruder (x int)"
+            )
+            'postgres' = @("SELECT 1")
+          }
+          foreach ($database in $denied.Keys) {
+            foreach ($sql in $denied[$database]) {
+              $result = Invoke-AsIdentity $database $sql
+              if ($result.Ok) { throw "allowed but should be refused: [$database] $sql" }
+              "refused: [$database] $sql"
+            }
+          }
+          'sifer_identity confinement: ok'
+          exit 0
+
+      - name: Service logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Tear down
+        if: always()
+        run: docker compose down --volumes

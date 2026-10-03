@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package sifer.v1;
+
+message DropContext {}
+
+message Instruction {}
+
+message FixPlan {}
+
+message ActionPlan {}
+
+message ActionResult {}
+
+message ConfirmRequest {}
+
+message AuthorityRequest {}
+
+message ConsultRequest {}
+
+message DiagnosticDelta {}

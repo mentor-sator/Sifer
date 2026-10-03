@@ -1,0 +1,22 @@
+[project]
+name = "sifer-orchestrator"
+version = "0.0.0"
+requires-python = "==3.12.14"
+dependencies = [
+  "opentelemetry-api==1.44.0",
+  "opentelemetry-exporter-otlp-proto-grpc==1.44.0",
+  "opentelemetry-instrumentation-grpc==0.65b0",
+  "opentelemetry-sdk==1.44.0",
+  "sifer-contracts",
+]
+
+[project.scripts]
+sifer-orchestrator = "sifer_orchestrator.__main__:main"
+sifer-orchestrator-healthcheck = "sifer_orchestrator.healthcheck:main"
+
+[tool.uv.sources]
+sifer-contracts = { workspace = true }
+
+[build-system]
+requires = ["hatchling==1.32.4"]
+build-backend = "hatchling.build"
