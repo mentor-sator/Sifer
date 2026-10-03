@@ -52,6 +52,8 @@ function New-SiferDevSecrets {
     $qdrant = Get-SiferSecret -Name 'qdrant/api-key'
     $silo = Get-SiferSecret -Name 'silo/root-password'
     $livekit = Get-SiferSecret -Name 'livekit/api-secret'
+    $googleId = Get-SiferSecret -Name 'google/oauth-client-id'
+    $googleSecret = Get-SiferSecret -Name 'google/oauth-client-secret'
     $pfxPassword = Get-PfxPassword
 
     $entries = [ordered]@{
@@ -68,6 +70,8 @@ function New-SiferDevSecrets {
         LIVEKIT_URL             = 'ws://127.0.0.1:7880'
         LIVEKIT_API_KEY         = 'sifer-dev'
         LIVEKIT_API_SECRET      = $livekit
+        GOOGLE_OAUTH_CLIENT_ID     = $googleId
+        GOOGLE_OAUTH_CLIENT_SECRET = $googleSecret
         SIGNING_CERT_THUMBPRINT = $script:Thumbprint
         SIGNING_PFX_PASSWORD    = $pfxPassword
         SIGNING_PFX_BASE64      = [Convert]::ToBase64String([IO.File]::ReadAllBytes($script:Pfx))
