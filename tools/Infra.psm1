@@ -137,11 +137,12 @@ function Resolve-EnvironmentValue {
 }
 
 function Wait-ForPorts {
-    param([int[]]$Ports, [int]$TimeoutSeconds = 20)
+    param([int[]]$Ports, [System.Diagnostics.Process]$Process, [int]$TimeoutSeconds = 120)
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
         $open = @($Ports | Where-Object { Get-PortListener -Port $_ })
         if ($open.Count -eq $Ports.Count) { return $true }
+        if ($Process -and $Process.HasExited) { return $false }
         Start-Sleep -Milliseconds 400
     }
     $false
@@ -165,6 +166,7 @@ function Start-SiferService {
         Copy-Item (Join-Path $script:Root "infra\local\$($service.Config)") (Join-Path $service.Data $service.Config) -Force
     }
 
+    $process = $null
     if ($Name -eq 'postgres') {
         New-Item -ItemType Directory -Force (Split-Path $service.Log) | Out-Null
         $control = Start-Process -FilePath $service.Control `
@@ -183,18 +185,18 @@ function Start-SiferService {
             }
         }
         try {
-            Start-Process -FilePath $service.Exe `
+            $process = Start-Process -FilePath $service.Exe `
                 -ArgumentList $service.Arguments `
                 -WorkingDirectory $service.Data `
                 -RedirectStandardOutput (Join-Path $service.Data 'stdout.txt') `
                 -RedirectStandardError (Join-Path $service.Data 'stderr.txt') `
-                -WindowStyle Hidden | Out-Null
+                -WindowStyle Hidden -PassThru
         } finally {
             foreach ($key in $applied) { Remove-Item "Env:$key" -ErrorAction SilentlyContinue }
         }
     }
 
-    if (-not (Wait-ForPorts -Ports $service.Ports)) {
+    if (-not (Wait-ForPorts -Ports $service.Ports -Process $process)) {
         throw "$Name did not start. Check $($service.Log)"
     }
     "$Name started"
