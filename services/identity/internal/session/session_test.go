@@ -188,3 +188,17 @@ func TestLogoutRevokesFamily(t *testing.T) {
 		t.Fatal("garbage token reached the store")
 	}
 }
+
+func TestIssueCreatesAFreshSessionForAHolder(t *testing.T) {
+	s, _, r := newService(t, &hasher{})
+	tokens, err := s.Issue(context.Background(), Holder{UserID: "u9", Email: "oauth@example.com"})
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+	if tokens.AccessToken != "access:u9:oauth@example.com" || len(tokens.RefreshToken) != refreshLength {
+		t.Fatalf("tokens = %+v", tokens)
+	}
+	if len(r.created) != 1 {
+		t.Fatalf("created %d refresh tokens, want 1", len(r.created))
+	}
+}

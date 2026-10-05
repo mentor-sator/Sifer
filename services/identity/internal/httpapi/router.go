@@ -28,19 +28,21 @@ type KeySet interface {
 }
 
 type Dependencies struct {
-	DB       Pinger
-	Accounts Registrar
-	Sessions Sessions
-	Keys     KeySet
-	Logger   *slog.Logger
+	DB         Pinger
+	Accounts   Registrar
+	Sessions   Sessions
+	Federation Federation
+	Keys       KeySet
+	Logger     *slog.Logger
 }
 
 type api struct {
-	db       Pinger
-	accounts Registrar
-	sessions Sessions
-	keys     KeySet
-	logger   *slog.Logger
+	db         Pinger
+	accounts   Registrar
+	sessions   Sessions
+	federation Federation
+	keys       KeySet
+	logger     *slog.Logger
 }
 
 func NewRouter(deps Dependencies) *gin.Engine {
@@ -52,7 +54,14 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		traceResponse,
 	)
 
-	handlers := &api{db: deps.DB, accounts: deps.Accounts, sessions: deps.Sessions, keys: deps.Keys, logger: deps.Logger}
+	handlers := &api{
+		db:         deps.DB,
+		accounts:   deps.Accounts,
+		sessions:   deps.Sessions,
+		federation: deps.Federation,
+		keys:       deps.Keys,
+		logger:     deps.Logger,
+	}
 	router.GET("/healthz", health)
 	router.GET("/readyz", handlers.ready)
 	router.GET("/.well-known/jwks.json", handlers.jwks)
@@ -60,6 +69,8 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	router.POST("/v1/login", handlers.login)
 	router.POST("/v1/refresh", handlers.refresh)
 	router.POST("/v1/logout", handlers.logout)
+	router.POST("/v1/oauth/:provider/start", handlers.oauthStart)
+	router.POST("/v1/oauth/:provider/finish", handlers.oauthFinish)
 	return router
 }
 

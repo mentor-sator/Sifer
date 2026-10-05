@@ -15,7 +15,10 @@ import (
 	"github.com/mentor-sator/Sifer/internal/telemetry"
 	"github.com/mentor-sator/Sifer/services/identity/internal/account"
 	"github.com/mentor-sator/Sifer/services/identity/internal/config"
+	"github.com/mentor-sator/Sifer/services/identity/internal/federation"
+	"github.com/mentor-sator/Sifer/services/identity/internal/grant"
 	"github.com/mentor-sator/Sifer/services/identity/internal/httpapi"
+	"github.com/mentor-sator/Sifer/services/identity/internal/oauth"
 	"github.com/mentor-sator/Sifer/services/identity/internal/password"
 	"github.com/mentor-sator/Sifer/services/identity/internal/session"
 	"github.com/mentor-sator/Sifer/services/identity/internal/signing"
@@ -28,6 +31,7 @@ const (
 	shutdownGrace      = 10 * time.Second
 	telemetryFlush     = 3 * time.Second
 	hashingConcurrency = 2
+	providerTimeout    = 15 * time.Second
 )
 
 func main() {
@@ -37,6 +41,8 @@ func main() {
 			os.Exit(healthcheck())
 		case "keygen":
 			os.Exit(keygen())
+		case "grantkey":
+			os.Exit(grantkey())
 		}
 	}
 
@@ -67,6 +73,38 @@ func keygen() int {
 	}
 	fmt.Println(encoded)
 	return 0
+}
+
+func grantkey() int {
+	encoded, err := grant.Generate()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "grantkey:", err)
+		return 1
+	}
+	fmt.Println(encoded)
+	return 0
+}
+
+func newFederation(cfg config.Config, links *store.Federated, sessions *session.Service) (httpapi.Federation, []string, error) {
+	if !cfg.GoogleEnabled() {
+		return nil, nil, nil
+	}
+	key, err := grant.ParseKey(cfg.GrantKey)
+	if err != nil {
+		return nil, nil, fmt.Errorf("SIFER_IDENTITY_GRANT_KEY: %w", err)
+	}
+	sealer, err := grant.NewSealer(key)
+	if err != nil {
+		return nil, nil, err
+	}
+	providers := []oauth.Provider{oauth.Google(cfg.GoogleClientID, cfg.GoogleClientSecret)}
+	exchanger := oauth.NewExchanger(&http.Client{Timeout: providerTimeout}, time.Now)
+	service := federation.NewService(providers, oauth.NewFlows(time.Now), exchanger, links, sealer, sessions)
+	names := make([]string, 0, len(providers))
+	for _, provider := range providers {
+		names = append(names, provider.Name)
+	}
+	return service, names, nil
 }
 
 func run(logger *slog.Logger) error {
@@ -107,15 +145,20 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	federated, providers, err := newFederation(cfg, store.NewFederated(pool), sessions)
+	if err != nil {
+		return err
+	}
 
 	server := &http.Server{
 		Addr: cfg.Addr,
 		Handler: httpapi.NewRouter(httpapi.Dependencies{
-			DB:       pool,
-			Accounts: accounts,
-			Sessions: sessions,
-			Keys:     key,
-			Logger:   logger,
+			DB:         pool,
+			Accounts:   accounts,
+			Sessions:   sessions,
+			Federation: federated,
+			Keys:       key,
+			Logger:     logger,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
@@ -133,6 +176,7 @@ func run(logger *slog.Logger) error {
 			"db_port", target.Port,
 			"db_name", target.Database,
 			"signing_kid", key.ID(),
+			"oauth_providers", providers,
 		)
 		serveErr <- server.ListenAndServe()
 	}()

@@ -12,7 +12,15 @@ const (
 
 func setEnv(t *testing.T, values map[string]string) {
 	t.Helper()
-	for _, name := range []string{"SIFER_IDENTITY_ADDR", "SIFER_OTLP_ENDPOINT", "SIFER_IDENTITY_DATABASE_URL", "SIFER_IDENTITY_SIGNING_KEY"} {
+	for _, name := range []string{
+		"SIFER_IDENTITY_ADDR",
+		"SIFER_OTLP_ENDPOINT",
+		"SIFER_IDENTITY_DATABASE_URL",
+		"SIFER_IDENTITY_SIGNING_KEY",
+		"SIFER_GOOGLE_CLIENT_ID",
+		"SIFER_GOOGLE_CLIENT_SECRET",
+		"SIFER_IDENTITY_GRANT_KEY",
+	} {
 		t.Setenv(name, values[name])
 	}
 }
@@ -63,5 +71,56 @@ func TestLoadRejectsMalformedAddress(t *testing.T) {
 	setEnv(t, map[string]string{"SIFER_IDENTITY_ADDR": "8081", "SIFER_IDENTITY_DATABASE_URL": databaseURL, "SIFER_IDENTITY_SIGNING_KEY": signingKey})
 	if _, err := Load(); err == nil {
 		t.Fatal("Load accepted an address without a host")
+	}
+}
+
+func TestLoadEnablesGoogleWithAGrantKey(t *testing.T) {
+	setEnv(t, map[string]string{
+		"SIFER_IDENTITY_DATABASE_URL": databaseURL,
+		"SIFER_IDENTITY_SIGNING_KEY":  signingKey,
+		"SIFER_GOOGLE_CLIENT_ID":      "123-abc.apps.googleusercontent.com",
+		"SIFER_GOOGLE_CLIENT_SECRET":  "GOCSPX-test",
+		"SIFER_IDENTITY_GRANT_KEY":    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+	})
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.GoogleEnabled() || cfg.GoogleClientSecret != "GOCSPX-test" || cfg.GrantKey == "" {
+		t.Fatalf("Load = %+v", cfg)
+	}
+}
+
+func TestLoadLeavesGoogleOffByDefault(t *testing.T) {
+	setEnv(t, map[string]string{"SIFER_IDENTITY_DATABASE_URL": databaseURL, "SIFER_IDENTITY_SIGNING_KEY": signingKey})
+	cfg, err := Load()
+	if err != nil || cfg.GoogleEnabled() {
+		t.Fatalf("Load = %+v, %v", cfg, err)
+	}
+}
+
+func TestLoadRefusesHalfAGoogleClient(t *testing.T) {
+	for _, half := range []string{"SIFER_GOOGLE_CLIENT_ID", "SIFER_GOOGLE_CLIENT_SECRET"} {
+		setEnv(t, map[string]string{
+			"SIFER_IDENTITY_DATABASE_URL": databaseURL,
+			"SIFER_IDENTITY_SIGNING_KEY":  signingKey,
+			"SIFER_IDENTITY_GRANT_KEY":    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+			half:                          "value",
+		})
+		if _, err := Load(); !errors.Is(err, ErrGoogleIncomplete) {
+			t.Fatalf("%s only: error = %v, want ErrGoogleIncomplete", half, err)
+		}
+	}
+}
+
+func TestLoadRequiresGrantKeyForGoogle(t *testing.T) {
+	setEnv(t, map[string]string{
+		"SIFER_IDENTITY_DATABASE_URL": databaseURL,
+		"SIFER_IDENTITY_SIGNING_KEY":  signingKey,
+		"SIFER_GOOGLE_CLIENT_ID":      "123-abc.apps.googleusercontent.com",
+		"SIFER_GOOGLE_CLIENT_SECRET":  "GOCSPX-test",
+	})
+	if _, err := Load(); !errors.Is(err, ErrGrantKeyMissing) {
+		t.Fatalf("error = %v, want ErrGrantKeyMissing", err)
 	}
 }

@@ -41,10 +41,13 @@ gateway:
     go run ./services/edge-gateway
 
 identity:
-    Import-Module ./tools/DevSecrets.psm1 -Force; $env:SIFER_IDENTITY_DATABASE_URL = (Get-SiferDevSecrets)['IDENTITY_DATABASE_URL']; $env:SIFER_IDENTITY_SIGNING_KEY = Get-SiferIdentityKey; go run ./services/identity
+    Import-Module ./tools/DevSecrets.psm1 -Force; Start-SiferIdentity
 
 identity-key:
     Import-Module ./tools/DevSecrets.psm1 -Force; New-SiferIdentityKey
+
+identity-grant-key:
+    Import-Module ./tools/DevSecrets.psm1 -Force; New-SiferGrantKey
 
 motion:
     pnpm --filter @sifer/motion dev

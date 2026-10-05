@@ -114,15 +114,19 @@ func (s *Service) Login(ctx context.Context, email, password string) (Tokens, er
 			_ = s.accounts.UpdatePasswordHash(ctx, credentials.UserID, fresh)
 		}
 	}
+	return s.Issue(ctx, Holder{UserID: credentials.UserID, Email: credentials.Email})
+}
+
+func (s *Service) Issue(ctx context.Context, holder Holder) (Tokens, error) {
 	refresh, hash, err := newRefresh()
 	if err != nil {
 		return Tokens{}, err
 	}
 	refreshExpires := s.now().UTC().Add(RefreshTTL)
-	if err := s.refresh.CreateRefresh(ctx, credentials.UserID, hash, refreshExpires); err != nil {
+	if err := s.refresh.CreateRefresh(ctx, holder.UserID, hash, refreshExpires); err != nil {
 		return Tokens{}, err
 	}
-	return s.tokens(credentials.UserID, credentials.Email, refresh, refreshExpires)
+	return s.tokens(holder.UserID, holder.Email, refresh, refreshExpires)
 }
 
 func (s *Service) Refresh(ctx context.Context, presented string) (Tokens, error) {
