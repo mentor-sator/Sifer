@@ -17,7 +17,16 @@ function siferContentSecurityPolicy(): Plugin {
 }
 
 export default defineConfig({
-  main: {},
+  main: {
+    build: {
+      rollupOptions: {
+        input: {
+          index: resolve('src/main/index.ts'),
+          'reader-worker': resolve('src/main/reader/worker.ts'),
+        },
+      },
+    },
+  },
   preload: {
     build: {
       rollupOptions: {
@@ -31,6 +40,7 @@ export default defineConfig({
         input: {
           index: resolve('src/renderer/index.html'),
           orb: resolve('src/renderer/orb.html'),
+          panel: resolve('src/renderer/panel.html'),
         },
       },
     },

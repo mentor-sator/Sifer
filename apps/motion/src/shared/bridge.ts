@@ -16,6 +16,7 @@ export interface OrbControls {
   dragTo(pointer: PointerPoint): void;
   endDrag(): void;
   click(): void;
+  drop(): void;
   onState(listener: (state: OrbState) => void): () => void;
 }
 
@@ -35,13 +36,37 @@ export interface AuthControls {
   onChange(listener: (state: SignedInState) => void): () => void;
 }
 
+export type ReadingKind = 'text' | 'value' | 'name';
+
+export interface Reading {
+  readonly source: 'accessibility';
+  readonly kind: ReadingKind;
+  readonly control: string;
+  readonly text: string;
+}
+
+export type ReadFailure = 'nothing' | 'protected' | 'unsupported' | 'timeout' | 'failed';
+
+export type ReadOutcome = { ok: true; reading: Reading } | { ok: false; reason: ReadFailure };
+
+export interface PanelControls {
+  current(): Promise<ReadOutcome | null>;
+  onContent(listener: (content: ReadOutcome) => void): () => void;
+  close(): void;
+}
+
 export interface SiferBridge {
   readonly versions: RuntimeVersions;
   readonly orb: OrbControls;
   readonly auth: AuthControls;
+  readonly panel: PanelControls;
 }
 
 export const orbClickChannel = 'sifer:orb-click';
+export const orbDropChannel = 'sifer:orb-drop';
+export const panelCurrentChannel = 'sifer:panel-current';
+export const panelContentChannel = 'sifer:panel-content';
+export const panelCloseChannel = 'sifer:panel-close';
 export const orbStateChannel = 'sifer:orb-state';
 export const authStateChannel = 'sifer:auth-state';
 export const authSignInChannel = 'sifer:auth-sign-in';

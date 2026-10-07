@@ -1,0 +1,100 @@
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: #12142a;
+  color: #e9ecff;
+}
+
+#panel-root {
+  height: 100%;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  box-sizing: border-box;
+  border: 1px solid #343a63;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 8px 10px 14px;
+  border-bottom: 1px solid #252a4f;
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.panel-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.panel-source {
+  flex: 1;
+  overflow: hidden;
+  font-size: 12px;
+  color: #aab0d8;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.panel-close {
+  margin-left: auto;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #aab0d8;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.panel-close:hover {
+  background: #252a4f;
+  color: #ffffff;
+}
+
+.panel-close:focus-visible {
+  outline: 2px solid #3d6bff;
+}
+
+.panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px;
+}
+
+.panel-text {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.panel-note {
+  margin: 0;
+  font-size: 13px;
+  color: #aab0d8;
+}
+
+.panel-footer {
+  padding: 6px 14px 8px;
+  border-top: 1px solid #252a4f;
+  font-size: 11px;
+  color: #7d84b3;
+}

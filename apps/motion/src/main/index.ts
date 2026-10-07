@@ -1,6 +1,7 @@
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Worker } from 'node:worker_threads';
 import {
   app,
   BrowserWindow,
@@ -23,16 +24,24 @@ import {
   orbDragBeginChannel,
   orbDragEndChannel,
   orbDragMoveChannel,
+  orbDropChannel,
   orbStateChannel,
+  panelCloseChannel,
+  panelContentChannel,
+  panelCurrentChannel,
+  type ReadOutcome,
   type SignedInState,
   type SignInResult,
 } from '../shared/bridge';
 import { readConfig } from './config';
 import { createDrag, frameInterval } from './drag';
+import { createDropReader, dropPoint } from './drop';
 import { createGoogleSignIn, GoogleSignInError } from './google';
 import { createIdentityClient, IdentityError } from './identity';
 import { createSessionStore } from './secrets';
 import { createSessionManager, type SessionManager } from './session';
+import { panelPlacement, panelSize, panelWindowOptions } from './panel';
+import { createReaderClient } from './reader/client';
 import { signInWindowOptions } from './signin';
 import { trayIcon } from './icon';
 import { trayMenu, trayTooltip, type TrayState } from './tray';
@@ -41,6 +50,11 @@ import { isAllowedNavigation } from './security';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const devServerUrl = process.env['ELECTRON_RENDERER_URL'];
+const preloadPath = join(here, '../preload/index.cjs');
+const readerWorkerPath = join(here, 'reader-worker.js').replace(
+  /app\.asar([\\/])/,
+  'app.asar.unpacked$1',
+);
 
 type RendererPage = { kind: 'url'; value: string } | { kind: 'file'; value: string };
 
@@ -56,7 +70,7 @@ function load(window: BrowserWindow, page: RendererPage): void {
 }
 
 function createOrb(): BrowserWindow {
-  const created = new BrowserWindow(orbWindowOptions(join(here, '../preload/index.cjs')));
+  const created = new BrowserWindow(orbWindowOptions(preloadPath));
   created.setAlwaysOnTop(true, 'screen-saver');
   created.setPosition(...positionFor(created));
 
@@ -170,6 +184,7 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on('before-quit', () => {
     quitting = true;
+    reader?.close();
     tray?.destroy();
   });
 
@@ -179,6 +194,76 @@ if (!app.requestSingleInstanceLock()) {
   let tray: Tray | null = null;
   let quitting = false;
   let activity: Activity = 'idle';
+  let panel: BrowserWindow | null = null;
+  let panelContent: ReadOutcome | null = null;
+
+  const reader =
+    process.platform === 'win32'
+      ? createReaderClient({ spawn: () => new Worker(readerWorkerPath) })
+      : null;
+
+  const drops = createDropReader({
+    hide: () => {
+      panel?.hide();
+      if (orb && !orb.isDestroyed()) {
+        orb.setIgnoreMouseEvents(true);
+        orb.setOpacity(0);
+      }
+    },
+    restore: () => {
+      if (orb && !orb.isDestroyed()) {
+        orb.setOpacity(1);
+        orb.setIgnoreMouseEvents(false);
+      }
+    },
+    wait: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+    read: (point) =>
+      reader ? reader.read(point) : Promise.resolve({ ok: false, reason: 'unsupported' }),
+  });
+
+  const ensurePanel = (): BrowserWindow => {
+    if (panel && !panel.isDestroyed()) {
+      return panel;
+    }
+    const created = new BrowserWindow(panelWindowOptions(preloadPath));
+    created.setAlwaysOnTop(true, 'floating');
+    created.on('closed', () => {
+      panel = null;
+    });
+    load(created, rendererPage('panel.html'));
+    panel = created;
+    return created;
+  };
+
+  const showPanel = (orbBounds: Electron.Rectangle, outcome: ReadOutcome): void => {
+    panelContent = outcome;
+    const target = ensurePanel();
+    const workArea = screen.getDisplayMatching(orbBounds).workArea;
+    target.setBounds({ ...panelPlacement(orbBounds, workArea), ...panelSize });
+    if (target.webContents.isLoading()) {
+      target.webContents.once('did-finish-load', () => target.showInactive());
+      return;
+    }
+    target.webContents.send(panelContentChannel, outcome);
+    target.showInactive();
+  };
+
+  const readUnderOrb = async (): Promise<void> => {
+    if (!orb || orb.isDestroyed() || drops.busy) {
+      return;
+    }
+    const bounds = orb.getBounds();
+    const center = dropPoint(bounds);
+    const point = process.platform === 'win32' ? screen.dipToScreenPoint(center) : center;
+    activity = 'reading';
+    publishOrbState();
+    const outcome = await drops.read(point);
+    activity = 'idle';
+    publishOrbState();
+    if (outcome) {
+      showPanel(bounds, outcome);
+    }
+  };
 
   const broadcast = (state: SignedInState): void => {
     for (const window of BrowserWindow.getAllWindows()) {
@@ -219,6 +304,7 @@ if (!app.requestSingleInstanceLock()) {
             }
             if (orb.isVisible()) {
               orb.hide();
+              panel?.hide();
             } else {
               orb.showInactive();
             }
@@ -258,7 +344,7 @@ if (!app.requestSingleInstanceLock()) {
       signIn.focus();
       return;
     }
-    signIn = new BrowserWindow(signInWindowOptions(join(here, '../preload/index.cjs')));
+    signIn = new BrowserWindow(signInWindowOptions(preloadPath));
     signIn.once('ready-to-show', () => signIn?.show());
     signIn.webContents.once('did-finish-load', () => signIn?.show());
     signIn.on('closed', () => {
@@ -338,6 +424,17 @@ if (!app.requestSingleInstanceLock()) {
       async () => (await sessions?.signOut()) ?? { status: 'signed-out' },
     );
     ipcMain.on(orbClickChannel, () => openSignIn());
+    ipcMain.on(orbDropChannel, (event) => {
+      if (orb && event.sender === orb.webContents) {
+        void readUnderOrb();
+      }
+    });
+    ipcMain.handle(panelCurrentChannel, () => panelContent);
+    ipcMain.on(panelCloseChannel, (event) => {
+      if (panel && event.sender === panel.webContents) {
+        panel.hide();
+      }
+    });
 
     orb = createOrb();
     orb.on('show', refreshTray);

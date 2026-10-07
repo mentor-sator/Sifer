@@ -48,7 +48,9 @@ export function Orb() {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
     window.sifer.orb.endDrag();
-    if (!moved.current) {
+    if (moved.current) {
+      window.sifer.orb.drop();
+    } else {
       window.sifer.orb.click();
     }
   }, []);
