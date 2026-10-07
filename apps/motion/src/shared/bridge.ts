@@ -21,7 +21,8 @@ export interface OrbControls {
 
 export type SignedInState = { status: 'signed-out' } | { status: 'signed-in'; email: string };
 
-export type SignInFailure = 'credentials' | 'unavailable' | 'invalid';
+export type SignInFailure =
+  'credentials' | 'unavailable' | 'invalid' | 'cancelled' | 'account-exists' | 'refused';
 
 export type SignInResult =
   { ok: true; state: SignedInState } | { ok: false; reason: SignInFailure };
@@ -29,6 +30,7 @@ export type SignInResult =
 export interface AuthControls {
   state(): Promise<SignedInState>;
   signIn(email: string, password: string): Promise<SignInResult>;
+  signInWithGoogle(): Promise<SignInResult>;
   signOut(): Promise<SignedInState>;
   onChange(listener: (state: SignedInState) => void): () => void;
 }
@@ -44,6 +46,7 @@ export const orbStateChannel = 'sifer:orb-state';
 export const authStateChannel = 'sifer:auth-state';
 export const authSignInChannel = 'sifer:auth-sign-in';
 export const authSignOutChannel = 'sifer:auth-sign-out';
+export const authGoogleChannel = 'sifer:auth-google';
 export const authChangedChannel = 'sifer:auth-changed';
 export const orbDragBeginChannel = 'sifer:orb-drag-begin';
 export const orbDragMoveChannel = 'sifer:orb-drag-move';

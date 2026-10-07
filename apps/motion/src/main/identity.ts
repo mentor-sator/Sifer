@@ -7,14 +7,25 @@ export interface Tokens {
 
 export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 
+export type IdentityFailure =
+  'credentials' | 'refresh' | 'unavailable' | 'consent' | 'account-exists' | 'rejected';
+
 export class IdentityError extends Error {
   constructor(
-    readonly reason: 'credentials' | 'refresh' | 'unavailable',
+    readonly reason: IdentityFailure,
     message: string,
   ) {
     super(message);
     this.name = 'IdentityError';
   }
+}
+
+interface ErrorPayload {
+  error?: unknown;
+}
+
+interface StartPayload {
+  authorization_url?: unknown;
 }
 
 interface TokenPayload {
@@ -56,9 +67,9 @@ export function createIdentityClient(options: IdentityClientOptions) {
 
   async function tokensFrom(
     response: Response,
-    failure: 'credentials' | 'refresh',
+    failure: 'credentials' | 'refresh' | 'oauth',
   ): Promise<Tokens> {
-    if (response.status === 401) {
+    if (response.status === 401 && failure !== 'oauth') {
       throw new IdentityError(
         failure,
         failure === 'credentials'
@@ -67,7 +78,9 @@ export function createIdentityClient(options: IdentityClientOptions) {
       );
     }
     if (!response.ok) {
-      throw new IdentityError('unavailable', `identity answered ${response.status}`);
+      throw failure === 'oauth'
+        ? await oauthError(response)
+        : new IdentityError('unavailable', `identity answered ${response.status}`);
     }
     const payload = (await response.json().catch(() => ({}))) as TokenPayload;
     const accessToken = payload.access_token;
@@ -92,7 +105,47 @@ export function createIdentityClient(options: IdentityClientOptions) {
     };
   }
 
+  async function oauthError(response: Response): Promise<IdentityError> {
+    const payload = (await response.json().catch(() => ({}))) as ErrorPayload;
+    const code = typeof payload.error === 'string' ? payload.error : '';
+    switch (code) {
+      case 'consent_required':
+        return new IdentityError('consent', 'the provider must be asked for consent again');
+      case 'account_exists':
+        return new IdentityError('account-exists', 'this email already has a password account');
+      case 'invalid_state':
+      case 'invalid_grant':
+      case 'email_unverified':
+      case 'account_disabled':
+        return new IdentityError('rejected', `sign-in refused: ${code}`);
+      default:
+        return new IdentityError('unavailable', `identity answered ${response.status}`);
+    }
+  }
+
   return {
+    async oauthStart(provider: string, redirectUri: string, forceConsent: boolean): Promise<URL> {
+      const response = await post(`/v1/oauth/${encodeURIComponent(provider)}/start`, {
+        redirect_uri: redirectUri,
+        force_consent: forceConsent,
+      });
+      if (!response.ok) {
+        throw await oauthError(response);
+      }
+      const payload = (await response.json().catch(() => ({}))) as StartPayload;
+      const raw = payload.authorization_url;
+      const url = typeof raw === 'string' && URL.canParse(raw) ? new URL(raw) : null;
+      if (!url || url.protocol !== 'https:') {
+        throw new IdentityError('unavailable', 'identity returned an unexpected answer');
+      }
+      return url;
+    },
+    async oauthFinish(provider: string, state: string, code: string): Promise<Tokens> {
+      return tokensFrom(
+        await post(`/v1/oauth/${encodeURIComponent(provider)}/finish`, { state, code }),
+        'oauth',
+      );
+    },
     async login(email: string, password: string): Promise<Tokens> {
       return tokensFrom(await post('/v1/login', { email, password }), 'credentials');
     },
@@ -106,3 +159,20 @@ export function createIdentityClient(options: IdentityClientOptions) {
 }
 
 export type IdentityClient = ReturnType<typeof createIdentityClient>;
+
+export function emailFromAccessToken(accessToken: string): string | null {
+  const payload = accessToken.split('.')[1];
+  if (!payload) {
+    return null;
+  }
+  try {
+    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as {
+      email?: unknown;
+    };
+    return typeof claims.email === 'string' && claims.email.includes('@')
+      ? claims.email.toLowerCase()
+      : null;
+  } catch {
+    return null;
+  }
+}

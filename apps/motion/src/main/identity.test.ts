@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createIdentityClient, IdentityError, type FetchLike } from './identity';
+import {
+  createIdentityClient,
+  emailFromAccessToken,
+  IdentityError,
+  type FetchLike,
+} from './identity';
 
 const clock = 1_700_000_000_000;
 const goodBody = {
@@ -108,5 +113,88 @@ describe('createIdentityClient', () => {
         }),
     });
     await expect(client.login('a@b.co', 'x')).rejects.toMatchObject({ reason: 'unavailable' });
+  });
+});
+
+describe('Google sign-in calls', () => {
+  it('starts with the loopback redirect and returns the Google URL', async () => {
+    const fetcher = vi.fn<FetchLike>(async () =>
+      answer(200, { authorization_url: 'https://accounts.google.com/o/oauth2/v2/auth?state=s' }),
+    );
+    const url = await clientWith(fetcher).oauthStart(
+      'google',
+      'http://127.0.0.1:50123/oauth/callback',
+      true,
+    );
+    expect(url.hostname).toBe('accounts.google.com');
+    const [path, init] = fetcher.mock.calls[0] ?? [];
+    expect(path).toBe('http://127.0.0.1:8081/v1/oauth/google/start');
+    expect(JSON.parse(String(init?.body))).toEqual({
+      redirect_uri: 'http://127.0.0.1:50123/oauth/callback',
+      force_consent: true,
+    });
+  });
+
+  it('refuses a start answer that is not an https URL', async () => {
+    for (const body of [
+      {},
+      { authorization_url: 'http://accounts.google.com/x' },
+      { authorization_url: 'nope' },
+    ]) {
+      await expect(
+        clientWith(async () => answer(200, body)).oauthStart('google', 'x', false),
+      ).rejects.toMatchObject({ reason: 'unavailable' });
+    }
+  });
+
+  it('finishes and returns Sifer tokens', async () => {
+    const fetcher = vi.fn<FetchLike>(async () => answer(200, goodBody));
+    const tokens = await clientWith(fetcher).oauthFinish('google', 's1', 'c1');
+    expect(tokens.refreshToken).toBe(goodBody.refresh_token);
+    const [path, init] = fetcher.mock.calls[0] ?? [];
+    expect(path).toBe('http://127.0.0.1:8081/v1/oauth/google/finish');
+    expect(JSON.parse(String(init?.body))).toEqual({ state: 's1', code: 'c1' });
+  });
+
+  it('maps identity error codes to reasons', async () => {
+    const cases: [number, string, string][] = [
+      [409, 'consent_required', 'consent'],
+      [409, 'account_exists', 'account-exists'],
+      [400, 'invalid_state', 'rejected'],
+      [400, 'invalid_grant', 'rejected'],
+      [403, 'email_unverified', 'rejected'],
+      [403, 'account_disabled', 'rejected'],
+      [502, 'provider_unavailable', 'unavailable'],
+      [500, 'internal', 'unavailable'],
+    ];
+    for (const [status, error, reason] of cases) {
+      await expect(
+        clientWith(async () => answer(status, { error })).oauthFinish('google', 's', 'c'),
+      ).rejects.toMatchObject({ reason });
+    }
+  });
+});
+
+describe('emailFromAccessToken', () => {
+  const token = (claims: unknown) =>
+    `h.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.s`;
+
+  it('reads and lowercases the email claim', () => {
+    expect(emailFromAccessToken(token({ email: 'Ninette@Example.com' }))).toBe(
+      'ninette@example.com',
+    );
+  });
+
+  it('returns null when there is no usable email', () => {
+    for (const raw of [
+      '',
+      'one-part',
+      'h.!!!.s',
+      token({}),
+      token({ email: 42 }),
+      token({ email: 'no-at' }),
+    ]) {
+      expect(emailFromAccessToken(raw)).toBeNull();
+    }
   });
 });

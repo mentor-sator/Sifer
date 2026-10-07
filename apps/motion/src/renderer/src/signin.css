@@ -80,3 +80,41 @@ button:disabled {
   color: #6e75a8;
   font-size: 11px;
 }
+
+.google {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 4px;
+  background: #ffffff;
+  color: #1f1f1f;
+  border: 1px solid #dadce0;
+}
+
+.google:disabled {
+  background: #d9dbe6;
+  color: #4a4f6a;
+}
+
+.mark {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #6e75a8;
+  font-size: 12px;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #343a63;
+}

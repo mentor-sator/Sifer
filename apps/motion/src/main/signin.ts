@@ -1,7 +1,7 @@
 import type { BrowserWindowConstructorOptions } from 'electron';
 import { hardenedWebPreferences } from './security';
 
-export const signInSize = { width: 400, height: 460 };
+export const signInSize = { width: 400, height: 560 };
 
 export function signInWindowOptions(preload: string): BrowserWindowConstructorOptions {
   return {

@@ -146,4 +146,24 @@ describe('createSessionManager', () => {
     expect(peek()).toBeNull();
     expect(await session.accessToken()).toBeNull();
   });
+
+  it('adopts Google tokens using the email inside the access token', () => {
+    const { store, peek } = memoryStore();
+    const session = manager(store);
+    const claims = Buffer.from(
+      JSON.stringify({ sub: 'u1', email: 'Ninette@Example.com' }),
+    ).toString('base64url');
+    const fresh = { ...tokensAt(clock, 'google'), accessToken: `h.${claims}.s` };
+    expect(session.adopt(fresh)).toEqual({ status: 'signed-in', email });
+    expect(peek()).toContain('refresh-google');
+    expect(changes.at(-1)).toEqual({ status: 'signed-in', email });
+  });
+
+  it('refuses tokens that carry no email', () => {
+    const { store, peek } = memoryStore();
+    const session = manager(store);
+    expect(() => session.adopt(tokensAt(clock, 'bad'))).toThrow(IdentityError);
+    expect(peek()).toBeNull();
+    expect(session.state()).toEqual({ status: 'signed-out' });
+  });
 });

@@ -1,4 +1,4 @@
-import { IdentityError, type IdentityClient, type Tokens } from './identity';
+import { emailFromAccessToken, IdentityError, type IdentityClient, type Tokens } from './identity';
 import type { SessionStore } from './secrets';
 
 export type SignedInState = { status: 'signed-out' } | { status: 'signed-in'; email: string };
@@ -79,6 +79,15 @@ export function createSessionManager(options: SessionOptions) {
       const normalized = address.trim().toLowerCase();
       const fresh = await options.client.login(normalized, password);
       remember(normalized, fresh);
+      return state();
+    },
+
+    adopt(fresh: Tokens): SignedInState {
+      const address = emailFromAccessToken(fresh.accessToken);
+      if (!address) {
+        throw new IdentityError('unavailable', 'identity returned a token without an email');
+      }
+      remember(address, fresh);
       return state();
     },
 

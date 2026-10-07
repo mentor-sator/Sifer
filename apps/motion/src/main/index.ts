@@ -10,10 +10,12 @@ import {
   safeStorage,
   screen,
   session,
+  shell,
   Tray,
 } from 'electron';
 import {
   authChangedChannel,
+  authGoogleChannel,
   authSignInChannel,
   authSignOutChannel,
   authStateChannel,
@@ -27,6 +29,7 @@ import {
 } from '../shared/bridge';
 import { readConfig } from './config';
 import { createDrag, frameInterval } from './drag';
+import { createGoogleSignIn, GoogleSignInError } from './google';
 import { createIdentityClient, IdentityError } from './identity';
 import { createSessionStore } from './secrets';
 import { createSessionManager, type SessionManager } from './session';
@@ -282,13 +285,14 @@ if (!app.requestSingleInstanceLock()) {
       write: (contents) => writeFileSync(secretFile, contents, { mode: 0o600 }),
       remove: () => rmSync(secretFile, { force: true }),
     });
-    sessions = createSessionManager({
-      client: createIdentityClient({
-        baseUrl: config.identityUrl,
-        fetch: (url, init) => fetch(url, init),
-      }),
-      store,
-      onChange: broadcast,
+    const identity = createIdentityClient({
+      baseUrl: config.identityUrl,
+      fetch: (url, init) => fetch(url, init),
+    });
+    sessions = createSessionManager({ client: identity, store, onChange: broadcast });
+    const google = createGoogleSignIn({
+      client: identity,
+      openBrowser: (url) => shell.openExternal(url),
     });
 
     ipcMain.handle(authStateChannel, () => sessions?.state() ?? { status: 'signed-out' });
@@ -316,6 +320,19 @@ if (!app.requestSingleInstanceLock()) {
         }
       },
     );
+    ipcMain.handle(authGoogleChannel, async (): Promise<SignInResult> => {
+      try {
+        const state = sessions!.adopt(await google.signIn());
+        signIn?.show();
+        signIn?.focus();
+        return { ok: true, state };
+      } catch (error) {
+        return {
+          ok: false,
+          reason: error instanceof GoogleSignInError ? error.reason : 'unavailable',
+        };
+      }
+    });
     ipcMain.handle(
       authSignOutChannel,
       async () => (await sessions?.signOut()) ?? { status: 'signed-out' },

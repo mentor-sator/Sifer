@@ -7,7 +7,7 @@ describe('signInWindowOptions', () => {
   it('is a small centred window the user can close', () => {
     expect(options).toMatchObject({
       width: 400,
-      height: 460,
+      height: 560,
       resizable: false,
       center: true,
       show: false,

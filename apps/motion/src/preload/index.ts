@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import {
   authChangedChannel,
+  authGoogleChannel,
   authSignInChannel,
   authSignOutChannel,
   authStateChannel,
@@ -40,6 +41,7 @@ const bridge: SiferBridge = {
     state: () => ipcRenderer.invoke(authStateChannel) as Promise<SignedInState>,
     signIn: (email: string, password: string) =>
       ipcRenderer.invoke(authSignInChannel, email, password) as Promise<SignInResult>,
+    signInWithGoogle: () => ipcRenderer.invoke(authGoogleChannel) as Promise<SignInResult>,
     signOut: () => ipcRenderer.invoke(authSignOutChannel) as Promise<SignedInState>,
     onChange: (listener: (state: SignedInState) => void) => {
       const forward = (_event: unknown, state: SignedInState): void => listener(state);
