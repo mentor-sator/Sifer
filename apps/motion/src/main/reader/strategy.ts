@@ -3,12 +3,26 @@ import type { Point } from '../drag';
 
 export const maxReadingLength = 20_000;
 export const maxAncestors = 10;
+export const boundsTolerance = 4;
+
+export interface ScreenRect {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+export interface TextHit {
+  readonly text: string;
+  readonly bounds: readonly ScreenRect[];
+}
 
 export interface AutomationNode {
   controlType(): number;
   isPassword(): boolean;
   name(): string;
-  textAt(point: Point): string | null;
+  textAt(point: Point): TextHit | null;
+  textOf(child: AutomationNode): TextHit | null;
   value(): string | null;
   parent(): AutomationNode | null;
   release(): void;
@@ -42,13 +56,29 @@ export function controlName(controlType: number): string {
 }
 
 const noBreakSpace = String.fromCharCode(160);
+const objectReplacement = String.fromCharCode(0xfffc);
 
 export function normalizeText(raw: string): string {
   return raw
     .replace(/\r\n?/g, '\n')
     .replaceAll(noBreakSpace, ' ')
+    .replaceAll(objectReplacement, '')
     .trim()
     .slice(0, maxReadingLength);
+}
+
+export function covers(
+  bounds: readonly ScreenRect[],
+  point: Point,
+  tolerance = boundsTolerance,
+): boolean {
+  return bounds.some(
+    (rect) =>
+      point.x >= rect.x - tolerance &&
+      point.x <= rect.x + rect.width + tolerance &&
+      point.y >= rect.y - tolerance &&
+      point.y <= rect.y + rect.height + tolerance,
+  );
 }
 
 function found(kind: ReadingKind, node: AutomationNode, raw: string | null): ReadOutcome | null {
@@ -73,14 +103,19 @@ export function readAt(automation: Automation, point: Point): ReadOutcome {
       return { ok: false, reason: 'protected' };
     }
     const own = found('value', target, target.value());
+    let container = false;
     let node: AutomationNode | null = target;
     for (let depth = 0; node && depth <= maxAncestors; depth += 1) {
       if (node.isPassword()) {
         return { ok: false, reason: 'protected' };
       }
-      const text = found('text', node, node.textAt(point));
-      if (text) {
-        return text;
+      if (!container) {
+        const hit = depth === 0 ? node.textAt(point) : node.textOf(target);
+        container = hit !== null;
+        const text = hit && covers(hit.bounds, point) ? found('text', node, hit.text) : null;
+        if (text) {
+          return text;
+        }
       }
       if (depth === 0 && own) {
         return own;

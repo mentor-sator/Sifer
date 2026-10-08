@@ -14,7 +14,7 @@ export interface DragDependencies {
   cursor: () => Point;
   position: () => Point;
   size: () => { width: number; height: number };
-  workArea: () => Area;
+  area: () => Area;
   move: (x: number, y: number) => void;
   start: (tick: () => void) => unknown;
   stop: (handle: unknown) => void;
@@ -29,11 +29,15 @@ export function clampToArea(
   size: { width: number; height: number },
   area: Area,
 ): Point {
-  const maxX = area.x + Math.max(area.width - size.width, 0);
-  const maxY = area.y + Math.max(area.height - size.height, 0);
+  const halfWidth = size.width / 2;
+  const halfHeight = size.height / 2;
+  const minX = area.x - halfWidth;
+  const minY = area.y - halfHeight;
+  const maxX = area.x + area.width - halfWidth;
+  const maxY = area.y + area.height - halfHeight;
   return {
-    x: Math.round(Math.min(Math.max(point.x, area.x), maxX)),
-    y: Math.round(Math.min(Math.max(point.y, area.y), maxY)),
+    x: Math.round(Math.min(Math.max(point.x, minX), maxX)),
+    y: Math.round(Math.min(Math.max(point.y, minY), maxY)),
   };
 }
 
@@ -47,7 +51,7 @@ export function createDrag(dependencies: DragDependencies) {
     const target = clampToArea(
       { x: cursor.x - offset.x, y: cursor.y - offset.y },
       dependencies.size(),
-      dependencies.workArea(),
+      dependencies.area(),
     );
     if (last && last.x === target.x && last.y === target.y) {
       return;

@@ -1,4 +1,4 @@
-import type { ReadFailure, ReadingKind, ReadOutcome } from '../../shared/bridge';
+import type { ReadFailure, ReadingKind, ReadingSource, ReadOutcome } from '../../shared/bridge';
 
 export interface ReadRequest {
   readonly id: number;
@@ -20,6 +20,8 @@ const failures: ReadonlySet<string> = new Set<ReadFailure>([
 ]);
 
 const kinds: ReadonlySet<string> = new Set<ReadingKind>(['text', 'value', 'name']);
+
+const sources: ReadonlySet<string> = new Set<ReadingSource>(['dom', 'accessibility']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -49,7 +51,8 @@ export function isReadOutcome(value: unknown): value is ReadOutcome {
   return (
     value['ok'] === true &&
     isRecord(reading) &&
-    reading['source'] === 'accessibility' &&
+    typeof reading['source'] === 'string' &&
+    sources.has(reading['source']) &&
     typeof reading['kind'] === 'string' &&
     kinds.has(reading['kind']) &&
     typeof reading['control'] === 'string' &&

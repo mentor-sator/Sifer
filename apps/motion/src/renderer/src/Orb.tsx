@@ -21,7 +21,7 @@ export function Orb() {
     dragging.current = true;
     moved.current = false;
     origin.current = { x: event.screenX, y: event.screenY };
-    window.sifer.orb.beginDrag({ x: event.screenX, y: event.screenY });
+    window.sifer.orb.beginDrag();
   }, []);
 
   const continueDrag = useCallback((event: PointerEvent<HTMLDivElement>) => {
@@ -36,7 +36,6 @@ export function Orb() {
     ) {
       moved.current = true;
     }
-    window.sifer.orb.dragTo({ x: event.screenX, y: event.screenY });
   }, []);
 
   const endDrag = useCallback((event: PointerEvent<HTMLDivElement>) => {

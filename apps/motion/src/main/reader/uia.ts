@@ -1,6 +1,13 @@
 import koffi, { type TypeObject } from 'koffi';
 import type { Point } from '../drag';
-import { maxReadingLength, type Automation, type AutomationNode } from './strategy';
+import {
+  covers,
+  maxReadingLength,
+  type Automation,
+  type AutomationNode,
+  type ScreenRect,
+  type TextHit,
+} from './strategy';
 
 const point = koffi.struct('SiferUiaPoint', { x: 'int32', y: 'int32' });
 const guid = koffi.struct('SiferUiaGuid', {
@@ -34,13 +41,14 @@ const slots = {
   automation: { elementFromPoint: 7, controlViewWalker: 14 },
   walker: { parent: 3 },
   element: { patternAs: 14, controlType: 21, name: 23, isPassword: 35 },
-  textPattern: { rangeFromPoint: 3 },
-  textRange: { expand: 6, getText: 12 },
+  textPattern: { rangeFromPoint: 3, rangeFromChild: 4 },
+  textRange: { expand: 6, boundingRectangles: 10, getText: 12 },
   valuePattern: { value: 4 },
 };
 
 const patterns = { value: 10002, text: 10014 };
-const textUnitParagraph = 4;
+const textUnit = { line: 3, paragraph: 4 };
+const invalidArgument = 0x80070057 | 0;
 const clsctxInprocServer = 1;
 const coinitMultithreaded = 0;
 const rpcChangedMode = 0x80010106 | 0;
@@ -94,6 +102,22 @@ const coCreateInstance = ole32.func('__stdcall', 'CoCreateInstance', 'int32', [
 ]);
 const sysStringLen = oleaut32.func('uint32 __stdcall SysStringLen(void *text)');
 const sysFreeString = oleaut32.func('void __stdcall SysFreeString(void *text)');
+const safeArrayGetLBound = oleaut32.func('__stdcall', 'SafeArrayGetLBound', 'int32', [
+  'void *',
+  'uint32',
+  intOut,
+]);
+const safeArrayGetUBound = oleaut32.func('__stdcall', 'SafeArrayGetUBound', 'int32', [
+  'void *',
+  'uint32',
+  intOut,
+]);
+const safeArrayAccessData = oleaut32.func('__stdcall', 'SafeArrayAccessData', 'int32', [
+  'void *',
+  pointerOut,
+]);
+const safeArrayUnaccessData = oleaut32.func('int32 __stdcall SafeArrayUnaccessData(void *array)');
+const safeArrayDestroy = oleaut32.func('int32 __stdcall SafeArrayDestroy(void *array)');
 
 class ComObject {
   #pointer: unknown;
@@ -151,6 +175,57 @@ function takeString(text: unknown): string {
   }
 }
 
+function takeRects(array: unknown): ScreenRect[] {
+  try {
+    const lower = [0];
+    const upper = [0];
+    check('SafeArrayGetLBound', safeArrayGetLBound(array, 1, lower) as number);
+    check('SafeArrayGetUBound', safeArrayGetUBound(array, 1, upper) as number);
+    const count = (upper[0] ?? -1) - (lower[0] ?? 0) + 1;
+    if (count < 4) {
+      return [];
+    }
+    const data: unknown[] = [null];
+    check('SafeArrayAccessData', safeArrayAccessData(array, data) as number);
+    try {
+      const values = koffi.decode(data[0], 'double', count) as Float64Array;
+      const rects: ScreenRect[] = [];
+      for (let index = 0; index + 3 < values.length; index += 4) {
+        rects.push({
+          x: values[index] ?? 0,
+          y: values[index + 1] ?? 0,
+          width: values[index + 2] ?? 0,
+          height: values[index + 3] ?? 0,
+        });
+      }
+      return rects;
+    } finally {
+      safeArrayUnaccessData(array);
+    }
+  } finally {
+    safeArrayDestroy(array);
+  }
+}
+
+function expand(range: ComObject, unit: number): void {
+  check('ExpandToEnclosingUnit', range.call(slots.textRange.expand, signatures.expand, unit));
+}
+
+function rectsOf(range: ComObject): ScreenRect[] {
+  const out: unknown[] = [null];
+  check(
+    'GetBoundingRectangles',
+    range.call(slots.textRange.boundingRectangles, signatures.getPointer, out),
+  );
+  return out[0] ? takeRects(out[0]) : [];
+}
+
+function textOf(range: ComObject): string {
+  return (
+    range.string('GetText', slots.textRange.getText, signatures.getText, maxReadingLength) ?? ''
+  );
+}
+
 function using<T>(value: ComObject | null, use: (value: ComObject) => T): T | null {
   if (!value) {
     return null;
@@ -183,7 +258,7 @@ class UiaNode implements AutomationNode {
     return this.#element.string('get_CurrentName', slots.element.name, signatures.getPointer) ?? '';
   }
 
-  textAt(at: Point): string | null {
+  textAt(at: Point): TextHit | null {
     return using(this.#pattern(patterns.text, ids.textPattern), (pattern) =>
       using(
         pattern.pointerOut(
@@ -193,19 +268,44 @@ class UiaNode implements AutomationNode {
           at,
         ),
         (range) => {
-          check(
-            'ExpandToEnclosingUnit',
-            range.call(slots.textRange.expand, signatures.expand, textUnitParagraph),
-          );
-          return range.string(
-            'GetText',
-            slots.textRange.getText,
-            signatures.getText,
-            maxReadingLength,
-          );
+          expand(range, textUnit.line);
+          const bounds = rectsOf(range);
+          if (!covers(bounds, at)) {
+            return { text: '', bounds };
+          }
+          expand(range, textUnit.paragraph);
+          return { text: textOf(range), bounds };
         },
       ),
     );
+  }
+
+  textOf(child: AutomationNode): TextHit | null {
+    if (!(child instanceof UiaNode)) {
+      return null;
+    }
+    return using(this.#pattern(patterns.text, ids.textPattern), (pattern) => {
+      let range: ComObject | null;
+      try {
+        range = pattern.pointerOut(
+          'RangeFromChild',
+          slots.textPattern.rangeFromChild,
+          signatures.parentOf,
+          child.#element.pointer,
+        );
+      } catch (error) {
+        if (error instanceof ComError && error.hresult === invalidArgument) {
+          return { text: '', bounds: [] };
+        }
+        throw error;
+      }
+      return (
+        using(range, (found) => ({ text: textOf(found), bounds: rectsOf(found) })) ?? {
+          text: '',
+          bounds: [],
+        }
+      );
+    });
   }
 
   value(): string | null {

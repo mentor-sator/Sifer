@@ -11,17 +11,17 @@ describe('grabOffset', () => {
 });
 
 describe('clampToArea', () => {
-  it('keeps the whole orb inside the work area', () => {
+  it('lets the orb reach every edge while its centre stays on the display', () => {
     expect(clampToArea({ x: 640, y: 360 }, size, workArea)).toEqual({ x: 640, y: 360 });
-    expect(clampToArea({ x: -50, y: -50 }, size, workArea)).toEqual({ x: 0, y: 0 });
-    expect(clampToArea({ x: 5000, y: 5000 }, size, workArea)).toEqual({ x: 1208, y: 648 });
+    expect(clampToArea({ x: -50, y: -50 }, size, workArea)).toEqual({ x: -36, y: -36 });
+    expect(clampToArea({ x: 5000, y: 5000 }, size, workArea)).toEqual({ x: 1244, y: 684 });
   });
 
   it('respects a display that does not start at zero', () => {
     const second: Area = { x: 1280, y: -200, width: 1920, height: 1080 };
-    expect(clampToArea({ x: 0, y: 0 }, size, second)).toEqual({ x: 1280, y: 0 });
-    expect(clampToArea({ x: 1000, y: -900 }, size, second)).toEqual({ x: 1280, y: -200 });
-    expect(clampToArea({ x: 9999, y: 9999 }, size, second)).toEqual({ x: 3128, y: 808 });
+    expect(clampToArea({ x: 0, y: 0 }, size, second)).toEqual({ x: 1244, y: 0 });
+    expect(clampToArea({ x: 1000, y: -900 }, size, second)).toEqual({ x: 1244, y: -236 });
+    expect(clampToArea({ x: 9999, y: 9999 }, size, second)).toEqual({ x: 3164, y: 844 });
   });
 
   it('rounds to whole pixels', () => {
@@ -41,7 +41,7 @@ describe('createDrag', () => {
       cursor: () => cursor,
       position: () => position,
       size: () => size,
-      workArea: () => workArea,
+      area: () => workArea,
       move: (x, y) => {
         moves.push({ x, y });
         position = { x, y };
@@ -91,15 +91,15 @@ describe('createDrag', () => {
     expect(moves).toHaveLength(1);
   });
 
-  it('never leaves the work area', () => {
+  it('reaches the corners but never loses its centre off the display', () => {
     const dragging = drag();
     dragging.begin();
     cursor = { x: -500, y: -500 };
     runTick(0);
-    expect(moves.at(-1)).toEqual({ x: 0, y: 0 });
+    expect(moves.at(-1)).toEqual({ x: -36, y: -36 });
     cursor = { x: 9999, y: 9999 };
     runTick(0);
-    expect(moves.at(-1)).toEqual({ x: 1208, y: 648 });
+    expect(moves.at(-1)).toEqual({ x: 1244, y: 684 });
   });
 
   it('ignores a second begin and stops exactly once', () => {
@@ -142,7 +142,7 @@ describe('createDrag', () => {
       cursor: () => cursor,
       position: () => position,
       size: () => size,
-      workArea: () => workArea,
+      area: () => workArea,
       move: (x, y) => moved.push({ x, y }),
       start: (tick) => setInterval(tick, frameInterval),
       stop: (handle) => clearInterval(handle as NodeJS.Timeout),

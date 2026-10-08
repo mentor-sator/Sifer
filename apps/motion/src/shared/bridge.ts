@@ -4,16 +4,10 @@ export interface RuntimeVersions {
   readonly node: string;
 }
 
-export interface PointerPoint {
-  readonly x: number;
-  readonly y: number;
-}
-
 export type OrbState = 'signed-out' | 'idle' | 'reading';
 
 export interface OrbControls {
-  beginDrag(pointer: PointerPoint): void;
-  dragTo(pointer: PointerPoint): void;
+  beginDrag(): void;
   endDrag(): void;
   click(): void;
   drop(): void;
@@ -38,8 +32,10 @@ export interface AuthControls {
 
 export type ReadingKind = 'text' | 'value' | 'name';
 
+export type ReadingSource = 'dom' | 'accessibility';
+
 export interface Reading {
-  readonly source: 'accessibility';
+  readonly source: ReadingSource;
   readonly kind: ReadingKind;
   readonly control: string;
   readonly text: string;
@@ -74,5 +70,4 @@ export const authSignOutChannel = 'sifer:auth-sign-out';
 export const authGoogleChannel = 'sifer:auth-google';
 export const authChangedChannel = 'sifer:auth-changed';
 export const orbDragBeginChannel = 'sifer:orb-drag-begin';
-export const orbDragMoveChannel = 'sifer:orb-drag-move';
 export const orbDragEndChannel = 'sifer:orb-drag-end';

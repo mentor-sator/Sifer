@@ -23,6 +23,12 @@ describe('isReadOutcome', () => {
       }),
     ).toBe(true);
     expect(isReadOutcome({ ok: false, reason: 'protected' })).toBe(true);
+    expect(
+      isReadOutcome({
+        ok: true,
+        reading: { source: 'dom', kind: 'value', control: 'Field', text: 'Kigali' },
+      }),
+    ).toBe(true);
   });
 
   it('rejects unknown kinds, sources and reasons', () => {
@@ -30,7 +36,7 @@ describe('isReadOutcome', () => {
     expect(
       isReadOutcome({
         ok: true,
-        reading: { source: 'screenshot', kind: 'text', control: 'Text', text: 'x' },
+        reading: { source: 'clipboard', kind: 'text', control: 'Text', text: 'x' },
       }),
     ).toBe(false);
     expect(

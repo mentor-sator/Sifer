@@ -5,6 +5,7 @@ import { Worker } from 'node:worker_threads';
 import {
   app,
   BrowserWindow,
+  dialog,
   ipcMain,
   Menu,
   nativeImage,
@@ -23,7 +24,6 @@ import {
   orbClickChannel,
   orbDragBeginChannel,
   orbDragEndChannel,
-  orbDragMoveChannel,
   orbDropChannel,
   orbStateChannel,
   panelCloseChannel,
@@ -38,7 +38,9 @@ import { createDrag, frameInterval } from './drag';
 import { createDropReader, dropPoint } from './drop';
 import { createGoogleSignIn, GoogleSignInError } from './google';
 import { createIdentityClient, IdentityError } from './identity';
-import { createSessionStore } from './secrets';
+import { createSessionStore, type SecretFile } from './secrets';
+import { createBridge, type Bridge } from './bridge/server';
+import { createTokenStore } from './bridge/token';
 import { createSessionManager, type SessionManager } from './session';
 import { panelPlacement, panelSize, panelWindowOptions } from './panel';
 import { createReaderClient } from './reader/client';
@@ -99,12 +101,11 @@ function createOrb(): BrowserWindow {
 }
 
 function attachDragging(created: BrowserWindow): void {
-  let pointer = { x: 0, y: 0 };
   const drag = createDrag({
-    cursor: () => pointer,
+    cursor: () => screen.getCursorScreenPoint(),
     position: () => created.getBounds(),
     size: () => created.getBounds(),
-    workArea: () => screen.getDisplayNearestPoint(pointer).workArea,
+    area: () => screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).bounds,
     move: (x, y) => {
       if (!created.isDestroyed()) {
         created.setPosition(x, y, false);
@@ -114,21 +115,10 @@ function attachDragging(created: BrowserWindow): void {
     stop: (handle) => clearInterval(handle as NodeJS.Timeout),
   });
 
-  const readPointer = (event: Electron.IpcMainEvent, x: unknown, y: unknown): boolean => {
-    if (event.sender !== created.webContents || !Number.isFinite(x) || !Number.isFinite(y)) {
-      return false;
-    }
-    pointer = { x: x as number, y: y as number };
-    return true;
-  };
-
-  ipcMain.on(orbDragBeginChannel, (event, x, y) => {
-    if (readPointer(event, x, y)) {
+  ipcMain.on(orbDragBeginChannel, (event) => {
+    if (event.sender === created.webContents) {
       drag.begin();
     }
-  });
-  ipcMain.on(orbDragMoveChannel, (event, x, y) => {
-    readPointer(event, x, y);
   });
   ipcMain.on(orbDragEndChannel, (event) => {
     if (event.sender === created.webContents) {
@@ -145,6 +135,20 @@ function report(created: BrowserWindow): void {
     `created visible=${created.isVisible()} onTop=${created.isAlwaysOnTop()} at=${bounds.x},${bounds.y} size=${bounds.width}x${bounds.height} ` +
       `display=${display.workArea.width}x${display.workArea.height}+${display.workArea.x}+${display.workArea.y} scale=${display.scaleFactor}`,
   );
+}
+
+function secretFileAt(path: string): SecretFile {
+  return {
+    read: () => {
+      try {
+        return readFileSync(path);
+      } catch {
+        return null;
+      }
+    },
+    write: (contents) => writeFileSync(path, contents, { mode: 0o600 }),
+    remove: () => rmSync(path, { force: true }),
+  };
 }
 
 function positionFor(orb: BrowserWindow): [number, number] {
@@ -185,6 +189,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('before-quit', () => {
     quitting = true;
     reader?.close();
+    void bridge?.stop();
     tray?.destroy();
   });
 
@@ -196,6 +201,7 @@ if (!app.requestSingleInstanceLock()) {
   let activity: Activity = 'idle';
   let panel: BrowserWindow | null = null;
   let panelContent: ReadOutcome | null = null;
+  let bridge: Bridge | null = null;
 
   const reader =
     process.platform === 'win32'
@@ -359,18 +365,10 @@ if (!app.requestSingleInstanceLock()) {
     );
     session.defaultSession.setPermissionCheckHandler(() => false);
     const config = readConfig();
-    const secretFile = join(app.getPath('userData'), 'session.bin');
-    const store = createSessionStore(safeStorage, {
-      read: () => {
-        try {
-          return readFileSync(secretFile);
-        } catch {
-          return null;
-        }
-      },
-      write: (contents) => writeFileSync(secretFile, contents, { mode: 0o600 }),
-      remove: () => rmSync(secretFile, { force: true }),
-    });
+    const store = createSessionStore(
+      safeStorage,
+      secretFileAt(join(app.getPath('userData'), 'session.bin')),
+    );
     const identity = createIdentityClient({
       baseUrl: config.identityUrl,
       fetch: (url, init) => fetch(url, init),
@@ -435,6 +433,34 @@ if (!app.requestSingleInstanceLock()) {
         panel.hide();
       }
     });
+
+    bridge = createBridge({
+      tokens: createTokenStore(
+        safeStorage,
+        secretFileAt(join(app.getPath('userData'), 'bridge.bin')),
+      ),
+      approvePairing: async () => {
+        const { response } = await dialog.showMessageBox({
+          type: 'question',
+          title: 'Sifer',
+          message: 'Connect the Sifer browser extension?',
+          detail:
+            'The Sifer extension in your browser is asking to pair with Sifer Motion. ' +
+            'Allow it only if you just pressed Connect in the extension.',
+          buttons: ['Allow', 'Deny'],
+          defaultId: 1,
+          cancelId: 1,
+          noLink: true,
+        });
+        return response === 0;
+      },
+      onStatus: (connected) =>
+        console.log(`browser extension ${connected ? 'connected' : 'disconnected'}`),
+    });
+    bridge.start().then(
+      () => console.log(`bridge listening on 127.0.0.1:${bridge?.port}`),
+      (error: Error) => console.error('bridge unavailable', error.message),
+    );
 
     orb = createOrb();
     orb.on('show', refreshTray);
