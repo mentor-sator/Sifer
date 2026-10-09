@@ -29,6 +29,7 @@ try {
     }
 
     $goPackages = @('./gen/...', './internal/...', './services/...')
+    $goBin = Join-Path ([System.IO.Path]::GetTempPath()) 'sifer-go-build'
     $uvRun = @('run', '--locked', '--all-packages')
 
     $stages = [ordered]@{
@@ -47,7 +48,7 @@ try {
         )
         typecheck = @(
             { pnpm typecheck },
-            { go build @goPackages },
+            { New-Item -ItemType Directory -Force -Path $goBin | Out-Null; go build -o $goBin @goPackages },
             { uv @uvRun mypy }
         )
         test      = @(

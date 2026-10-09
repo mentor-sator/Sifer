@@ -52,6 +52,9 @@ identity-grant-key:
 motion:
     pnpm --filter @sifer/motion dev
 
+extension:
+    pnpm --filter @sifer/extension build
+
 motion-package:
     pnpm --filter @sifer/motion package
 

@@ -164,7 +164,7 @@ describe('createBridge', () => {
       }),
     );
     await expect(read).resolves.toMatchObject({ reading: { source: 'dom', text: 'Kigali' } });
-    expect(status).toEqual([true]);
+    expect(status).toEqual([true, true]);
   });
 
   it('gives up on a slow extension so the next reader can run', async () => {

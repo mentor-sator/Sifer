@@ -13,6 +13,8 @@ export default defineConfig([
     '**/dist/**',
     '**/build/**',
     '**/out/**',
+    '**/.output/**',
+    '**/.wxt/**',
     '**/target/**',
     '**/.turbo/**',
     '**/coverage/**',
@@ -40,6 +42,12 @@ export default defineConfig([
   },
   {
     files: ['apps/motion/src/renderer/**/*.{ts,tsx}'],
+    languageOptions: {
+      globals: { ...globals.browser },
+    },
+  },
+  {
+    files: ['apps/extension/**/*.ts'],
     languageOptions: {
       globals: { ...globals.browser },
     },

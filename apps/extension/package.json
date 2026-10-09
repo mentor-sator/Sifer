@@ -1,0 +1,18 @@
+{
+  "name": "@sifer/extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "postinstall": "wxt prepare",
+    "build": "wxt build",
+    "typecheck": "wxt prepare && tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "jsdom": "30.1.2",
+    "typescript": "5.9.3",
+    "vitest": "5.0.1",
+    "wxt": "0.21.4"
+  }
+}

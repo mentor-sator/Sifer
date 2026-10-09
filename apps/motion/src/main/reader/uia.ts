@@ -40,7 +40,7 @@ const slots = {
   release: 2,
   automation: { elementFromPoint: 7, controlViewWalker: 14 },
   walker: { parent: 3 },
-  element: { patternAs: 14, controlType: 21, name: 23, isPassword: 35 },
+  element: { patternAs: 14, processId: 20, controlType: 21, name: 23, isPassword: 35 },
   textPattern: { rangeFromPoint: 3, rangeFromChild: 4 },
   textRange: { expand: 6, boundingRectangles: 10, getText: 12 },
   valuePattern: { value: 4 },
@@ -340,6 +340,7 @@ class UiaNode implements AutomationNode {
 }
 
 export interface UiAutomation extends Automation {
+  processIdAt(point: Point): number | null;
   dispose(): void;
 }
 
@@ -380,6 +381,17 @@ export function createUiAutomation(): UiAutomation {
           at,
         );
         return element ? new UiaNode(element, walker) : null;
+      },
+      processIdAt(at: Point): number | null {
+        return using(
+          automation.pointerOut(
+            'ElementFromPoint',
+            slots.automation.elementFromPoint,
+            signatures.atPoint,
+            at,
+          ),
+          (element) => element.int('get_CurrentProcessId', slots.element.processId),
+        );
       },
       dispose(): void {
         walker.release();

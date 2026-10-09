@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { ReadFailure, ReadingKind, ReadOutcome } from '../../shared/bridge';
+import type { ReadFailure, ReadingKind, ReadingSource, ReadOutcome } from '../../shared/bridge';
 import './panel.css';
 
 const failureText: Record<ReadFailure, string> = {
@@ -8,6 +8,11 @@ const failureText: Record<ReadFailure, string> = {
   unsupported: 'Reading the screen is not available on this system yet.',
   timeout: 'The app under the orb did not answer in time.',
   failed: 'Sifer could not read that spot.',
+};
+
+const sourceText: Record<ReadingSource, string> = {
+  dom: 'from the page',
+  accessibility: 'from the app',
 };
 
 const kindText: Record<ReadingKind, string> = {
@@ -70,6 +75,8 @@ export function Panel() {
       {content?.ok && (
         <footer className="panel-footer">
           {content.reading.text.length.toLocaleString()} characters
+          {separator}
+          {sourceText[content.reading.source]}
         </footer>
       )}
     </main>

@@ -1,15 +1,17 @@
 import type { ReadFailure, ReadingKind, ReadingSource, ReadOutcome } from '../../shared/bridge';
 
+export type ReaderOperation = 'read' | 'app';
+
 export interface ReadRequest {
   readonly id: number;
+  readonly op: ReaderOperation;
   readonly x: number;
   readonly y: number;
 }
 
-export interface ReadReply {
-  readonly id: number;
-  readonly outcome: ReadOutcome;
-}
+export type ReaderReply =
+  | { readonly id: number; readonly outcome: ReadOutcome }
+  | { readonly id: number; readonly app: string | null };
 
 const failures: ReadonlySet<string> = new Set<ReadFailure>([
   'nothing',
@@ -35,6 +37,7 @@ export function isReadRequest(value: unknown): value is ReadRequest {
   return (
     isRecord(value) &&
     isId(value['id']) &&
+    (value['op'] === 'read' || value['op'] === 'app') &&
     Number.isInteger(value['x']) &&
     Number.isInteger(value['y'])
   );
@@ -60,6 +63,13 @@ export function isReadOutcome(value: unknown): value is ReadOutcome {
   );
 }
 
-export function isReadReply(value: unknown): value is ReadReply {
-  return isRecord(value) && isId(value['id']) && isReadOutcome(value['outcome']);
+export function isReaderReply(value: unknown): value is ReaderReply {
+  if (!isRecord(value) || !isId(value['id'])) {
+    return false;
+  }
+  if ('outcome' in value) {
+    return isReadOutcome(value['outcome']);
+  }
+  const app = value['app'];
+  return app === null || (typeof app === 'string' && app.length <= 260);
 }

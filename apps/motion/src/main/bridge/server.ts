@@ -133,6 +133,7 @@ export function createBridge(dependencies: BridgeDependencies) {
       }
       if (message.type === 'hello') {
         browser = { browser: message.browser, version: message.version };
+        dependencies.onStatus(true);
       } else if (message.type === 'reading') {
         pending.get(message.id)?.(message.outcome);
       }

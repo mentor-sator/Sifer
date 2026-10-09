@@ -43,11 +43,19 @@ import { createBridge, type Bridge } from './bridge/server';
 import { createTokenStore } from './bridge/token';
 import { createSessionManager, type SessionManager } from './session';
 import { panelPlacement, panelSize, panelWindowOptions } from './panel';
+import { createReadChain } from './reader/chain';
 import { createReaderClient } from './reader/client';
 import { signInWindowOptions } from './signin';
 import { trayIcon } from './icon';
 import { trayMenu, trayTooltip, type TrayState } from './tray';
-import { orbRestingPlace, orbStateFor, orbWindowOptions, type Activity } from './orb';
+import {
+  orbBoundsAt,
+  orbRestingPlace,
+  orbSize,
+  orbStateFor,
+  orbWindowOptions,
+  type Activity,
+} from './orb';
 import { isAllowedNavigation } from './security';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -74,7 +82,7 @@ function load(window: BrowserWindow, page: RendererPage): void {
 function createOrb(): BrowserWindow {
   const created = new BrowserWindow(orbWindowOptions(preloadPath));
   created.setAlwaysOnTop(true, 'screen-saver');
-  created.setPosition(...positionFor(created));
+  created.setPosition(...restingPosition());
 
   let shown = false;
   const reveal = (): void => {
@@ -82,7 +90,7 @@ function createOrb(): BrowserWindow {
       return;
     }
     shown = true;
-    created.setPosition(...positionFor(created));
+    created.setPosition(...restingPosition());
     created.showInactive();
     report(created);
   };
@@ -104,7 +112,7 @@ function attachDragging(created: BrowserWindow): void {
   const drag = createDrag({
     cursor: () => screen.getCursorScreenPoint(),
     position: () => created.getBounds(),
-    size: () => created.getBounds(),
+    size: () => ({ width: orbSize, height: orbSize }),
     area: () => screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).bounds,
     move: (x, y) => {
       if (!created.isDestroyed()) {
@@ -123,6 +131,10 @@ function attachDragging(created: BrowserWindow): void {
   ipcMain.on(orbDragEndChannel, (event) => {
     if (event.sender === created.webContents) {
       drag.end();
+      const [width, height] = created.getContentSize();
+      if (width !== orbSize || height !== orbSize) {
+        created.setContentSize(orbSize, orbSize);
+      }
     }
   });
   created.on('closed', () => drag.end());
@@ -151,9 +163,9 @@ function secretFileAt(path: string): SecretFile {
   };
 }
 
-function positionFor(orb: BrowserWindow): [number, number] {
+function restingPosition(): [number, number] {
   const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-  const place = orbRestingPlace(display.workArea, orb.getBounds().width);
+  const place = orbRestingPlace(display.workArea, orbSize);
   return [place.x, place.y];
 }
 
@@ -208,6 +220,14 @@ if (!app.requestSingleInstanceLock()) {
       ? createReaderClient({ spawn: () => new Worker(readerWorkerPath) })
       : null;
 
+  const readChain = createReadChain({
+    app: (physical) => (reader ? reader.app(physical) : Promise.resolve(null)),
+    extensionConnected: () => bridge?.connected ?? false,
+    dom: (dip) => (bridge ? bridge.read(dip) : Promise.resolve(null)),
+    accessibility: (physical) =>
+      reader ? reader.read(physical) : Promise.resolve({ ok: false, reason: 'unsupported' }),
+  });
+
   const drops = createDropReader({
     hide: () => {
       panel?.hide();
@@ -224,7 +244,7 @@ if (!app.requestSingleInstanceLock()) {
     },
     wait: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
     read: (point) =>
-      reader ? reader.read(point) : Promise.resolve({ ok: false, reason: 'unsupported' }),
+      readChain(point, process.platform === 'win32' ? screen.dipToScreenPoint(point) : point),
   });
 
   const ensurePanel = (): BrowserWindow => {
@@ -258,12 +278,10 @@ if (!app.requestSingleInstanceLock()) {
     if (!orb || orb.isDestroyed() || drops.busy) {
       return;
     }
-    const bounds = orb.getBounds();
-    const center = dropPoint(bounds);
-    const point = process.platform === 'win32' ? screen.dipToScreenPoint(center) : center;
+    const bounds = orbBoundsAt(orb.getBounds());
     activity = 'reading';
     publishOrbState();
-    const outcome = await drops.read(point);
+    const outcome = await drops.read(dropPoint(bounds));
     activity = 'idle';
     publishOrbState();
     if (outcome) {
@@ -293,6 +311,11 @@ if (!app.requestSingleInstanceLock()) {
   const trayState = (): TrayState => ({
     session: sessions?.state() ?? { status: 'signed-out' },
     orbVisible: Boolean(orb && !orb.isDestroyed() && orb.isVisible()),
+    extension: bridge?.connected
+      ? bridge.browser
+        ? `${bridge.browser.browser} ${bridge.browser.version}`
+        : 'connected'
+      : null,
   });
 
   function refreshTray(): void {
@@ -454,8 +477,10 @@ if (!app.requestSingleInstanceLock()) {
         });
         return response === 0;
       },
-      onStatus: (connected) =>
-        console.log(`browser extension ${connected ? 'connected' : 'disconnected'}`),
+      onStatus: (connected) => {
+        console.log(`browser extension ${connected ? 'connected' : 'disconnected'}`);
+        refreshTray();
+      },
     });
     bridge.start().then(
       () => console.log(`bridge listening on 127.0.0.1:${bridge?.port}`),

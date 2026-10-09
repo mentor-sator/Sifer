@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { orbRestingPlace, orbSize, orbStateFor, orbWindowOptions } from './orb';
+import { orbBoundsAt, orbRestingPlace, orbSize, orbStateFor, orbWindowOptions } from './orb';
 
 describe('orbWindowOptions', () => {
   const options = orbWindowOptions('/app/preload.cjs');
@@ -17,6 +17,10 @@ describe('orbWindowOptions', () => {
       hasShadow: false,
       alwaysOnTop: true,
       movable: true,
+      minWidth: 72,
+      minHeight: 72,
+      maxWidth: 72,
+      maxHeight: 72,
     });
   });
 
@@ -63,5 +67,11 @@ describe('orbStateFor', () => {
   it('follows the activity once signed in', () => {
     expect(orbStateFor(signedIn, 'idle')).toBe('idle');
     expect(orbStateFor(signedIn, 'reading')).toBe('reading');
+  });
+});
+
+describe('orbBoundsAt', () => {
+  it('always reports the true orb size, whatever Windows says the window grew to', () => {
+    expect(orbBoundsAt({ x: 10, y: 20 })).toEqual({ x: 10, y: 20, width: 72, height: 72 });
   });
 });

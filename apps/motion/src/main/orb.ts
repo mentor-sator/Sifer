@@ -9,6 +9,10 @@ export function orbWindowOptions(preload: string): BrowserWindowConstructorOptio
   return {
     width: orbSize,
     height: orbSize,
+    minWidth: orbSize,
+    minHeight: orbSize,
+    maxWidth: orbSize,
+    maxHeight: orbSize,
     useContentSize: true,
     transparent: true,
     backgroundColor: '#00000000',
@@ -35,6 +39,10 @@ export function orbRestingPlace(
   const x = workArea.x + Math.max(workArea.width - size - margin, 0);
   const y = workArea.y + Math.max(workArea.height - size - margin, 0);
   return { x: Math.round(x), y: Math.round(y) };
+}
+
+export function orbBoundsAt(position: { x: number; y: number }): Rectangle {
+  return { x: position.x, y: position.y, width: orbSize, height: orbSize };
 }
 
 export type Activity = 'idle' | 'reading';

@@ -12,8 +12,13 @@ const actions = (): TrayActions => ({
 const signedIn: TrayState = {
   session: { status: 'signed-in', email: 'ninette@example.com' },
   orbVisible: true,
+  extension: 'Chrome 141',
 };
-const signedOut: TrayState = { session: { status: 'signed-out' }, orbVisible: true };
+const signedOut: TrayState = {
+  session: { status: 'signed-out' },
+  orbVisible: true,
+  extension: null,
+};
 
 const labels = (state: TrayState) =>
   trayMenu(state, actions()).map((item) => item.label ?? item.type);
@@ -22,6 +27,7 @@ describe('trayMenu', () => {
   it('names the signed-in account and offers sign out', () => {
     expect(labels(signedIn)).toEqual([
       'Signed in as ninette@example.com',
+      'Browser extension: Chrome 141',
       'separator',
       'Stop Sifer (hide the orb)',
       'Account...',
@@ -34,6 +40,7 @@ describe('trayMenu', () => {
   it('offers sign in and disables sign out when signed out', () => {
     const menu = trayMenu(signedOut, actions());
     expect(labels(signedOut)[0]).toBe('Not signed in');
+    expect(labels(signedOut)[1]).toBe('Browser extension: not connected');
     expect(menu.find((item) => item.label === 'Sign in...')).toBeTruthy();
     expect(menu.find((item) => item.label === 'Sign out')?.enabled).toBe(false);
   });

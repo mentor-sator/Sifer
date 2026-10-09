@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReadOutcome } from '../../shared/bridge';
-import { createReaderClient, readTimeout } from './client';
+import { appTimeout, createReaderClient, readTimeout } from './client';
 import type { ReadRequest } from './protocol';
 
 class FakeWorker extends EventEmitter {
@@ -30,14 +30,22 @@ describe('createReaderClient', () => {
   let workers: FakeWorker[];
   let client: ReturnType<typeof createReaderClient>;
 
+  const worker = (index = 0): FakeWorker => {
+    const found = workers[index];
+    if (!found) {
+      throw new Error(`no worker ${index}`);
+    }
+    return found;
+  };
+
   beforeEach(() => {
     vi.useFakeTimers();
     workers = [];
     client = createReaderClient({
       spawn: () => {
-        const worker = new FakeWorker();
-        workers.push(worker);
-        return worker;
+        const created = new FakeWorker();
+        workers.push(created);
+        return created;
       },
     });
   });
@@ -50,21 +58,35 @@ describe('createReaderClient', () => {
     const first = client.read({ x: 1.4, y: 2.6 });
     const second = client.read({ x: 3, y: 4 });
     expect(workers).toHaveLength(1);
-    expect(workers[0]!.sent).toEqual([
-      { id: 1, x: 1, y: 3 },
-      { id: 2, x: 3, y: 4 },
+    expect(worker().sent).toEqual([
+      { id: 1, op: 'read', x: 1, y: 3 },
+      { id: 2, op: 'read', x: 3, y: 4 },
     ]);
-    workers[0]!.reply(2, { ok: false, reason: 'nothing' });
-    workers[0]!.reply(1, reading);
+    worker().reply(2, { ok: false, reason: 'nothing' });
+    worker().reply(1, reading);
     await expect(first).resolves.toEqual(reading);
     await expect(second).resolves.toEqual({ ok: false, reason: 'nothing' });
   });
 
+  it('asks which app is under a point', async () => {
+    const app = client.app({ x: 10, y: 20 });
+    expect(worker().sent).toEqual([{ id: 1, op: 'app', x: 10, y: 20 }]);
+    worker().emit('message', { id: 1, app: 'chrome.exe' });
+    await expect(app).resolves.toBe('chrome.exe');
+  });
+
+  it('gives up on the app question quickly', async () => {
+    const app = client.app({ x: 0, y: 0 });
+    vi.advanceTimersByTime(appTimeout);
+    await expect(app).resolves.toBeNull();
+    expect(worker().terminated).toBe(true);
+  });
+
   it('ignores malformed replies', async () => {
     const read = client.read({ x: 0, y: 0 });
-    workers[0]!.emit('message', { id: 1, outcome: { ok: true } });
-    workers[0]!.emit('message', 'noise');
-    workers[0]!.reply(1, reading);
+    worker().emit('message', { id: 1, outcome: { ok: true } });
+    worker().emit('message', 'noise');
+    worker().reply(1, reading);
     await expect(read).resolves.toEqual(reading);
   });
 
@@ -72,18 +94,18 @@ describe('createReaderClient', () => {
     const stuck = client.read({ x: 0, y: 0 });
     vi.advanceTimersByTime(readTimeout);
     await expect(stuck).resolves.toEqual({ ok: false, reason: 'timeout' });
-    expect(workers[0]!.terminated).toBe(true);
-    workers[0]!.reply(1, reading);
+    expect(worker().terminated).toBe(true);
+    worker().reply(1, reading);
     const next = client.read({ x: 0, y: 0 });
     expect(workers).toHaveLength(2);
-    expect(workers[1]!.sent).toEqual([{ id: 2, x: 0, y: 0 }]);
-    workers[1]!.reply(2, reading);
+    expect(worker(1).sent).toEqual([{ id: 2, op: 'read', x: 0, y: 0 }]);
+    worker(1).reply(2, reading);
     await expect(next).resolves.toEqual(reading);
   });
 
   it('fails pending reads when the worker crashes', async () => {
     const read = client.read({ x: 0, y: 0 });
-    workers[0]!.emit('error', new Error('crash'));
+    worker().emit('error', new Error('crash'));
     await expect(read).resolves.toEqual({ ok: false, reason: 'failed' });
     expect(vi.getTimerCount()).toBe(0);
   });
@@ -91,6 +113,6 @@ describe('createReaderClient', () => {
   it('closes the worker', () => {
     void client.read({ x: 0, y: 0 });
     client.close();
-    expect(workers[0]!.terminated).toBe(true);
+    expect(worker().terminated).toBe(true);
   });
 });

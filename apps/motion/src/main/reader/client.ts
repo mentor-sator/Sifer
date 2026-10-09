@@ -1,8 +1,14 @@
 import type { ReadOutcome } from '../../shared/bridge';
 import type { Point } from '../drag';
-import { isReadReply, type ReadRequest } from './protocol';
+import {
+  isReaderReply,
+  type ReaderOperation,
+  type ReaderReply,
+  type ReadRequest,
+} from './protocol';
 
 export const readTimeout = 1500;
+export const appTimeout = 300;
 
 export interface ReaderWorker {
   postMessage(request: ReadRequest): void;
@@ -13,11 +19,17 @@ export interface ReaderWorker {
 export interface ReaderClientDependencies {
   spawn(): ReaderWorker;
   timeout?: number;
+  appTimeout?: number;
 }
 
+type Settle = (reply: ReaderReply | null, reason: 'timeout' | 'failed') => void;
+
 export function createReaderClient(dependencies: ReaderClientDependencies) {
-  const timeout = dependencies.timeout ?? readTimeout;
-  const pending = new Map<number, (outcome: ReadOutcome) => void>();
+  const timeouts: Record<ReaderOperation, number> = {
+    read: dependencies.timeout ?? readTimeout,
+    app: dependencies.appTimeout ?? appTimeout,
+  };
+  const pending = new Map<number, Settle>();
   let worker: ReaderWorker | null = null;
   let nextId = 1;
 
@@ -28,7 +40,7 @@ export function createReaderClient(dependencies: ReaderClientDependencies) {
     worker = null;
     void gone.terminate();
     for (const settle of [...pending.values()]) {
-      settle({ ok: false, reason });
+      settle(null, reason);
     }
   };
 
@@ -38,8 +50,8 @@ export function createReaderClient(dependencies: ReaderClientDependencies) {
     }
     const created = dependencies.spawn();
     created.on('message', (reply) => {
-      if (isReadReply(reply)) {
-        pending.get(reply.id)?.(reply.outcome);
+      if (isReaderReply(reply)) {
+        pending.get(reply.id)?.(reply, 'failed');
       }
     });
     created.on('error', () => discard(created, 'failed'));
@@ -48,19 +60,31 @@ export function createReaderClient(dependencies: ReaderClientDependencies) {
     return created;
   };
 
-  return {
-    read(point: Point): Promise<ReadOutcome> {
-      const target = ensure();
-      const id = nextId++;
-      return new Promise((resolve) => {
-        const timer = setTimeout(() => discard(target, 'timeout'), timeout);
-        pending.set(id, (outcome) => {
-          clearTimeout(timer);
-          pending.delete(id);
-          resolve(outcome);
-        });
-        target.postMessage({ id, x: Math.round(point.x), y: Math.round(point.y) });
+  const request = (
+    op: ReaderOperation,
+    point: Point,
+  ): Promise<{ reply: ReaderReply | null; reason: 'timeout' | 'failed' }> => {
+    const target = ensure();
+    const id = nextId++;
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => discard(target, 'timeout'), timeouts[op]);
+      pending.set(id, (reply, reason) => {
+        clearTimeout(timer);
+        pending.delete(id);
+        resolve({ reply, reason });
       });
+      target.postMessage({ id, op, x: Math.round(point.x), y: Math.round(point.y) });
+    });
+  };
+
+  return {
+    async read(point: Point): Promise<ReadOutcome> {
+      const { reply, reason } = await request('read', point);
+      return reply && 'outcome' in reply ? reply.outcome : { ok: false, reason };
+    },
+    async app(point: Point): Promise<string | null> {
+      const { reply } = await request('app', point);
+      return reply && 'app' in reply ? reply.app : null;
     },
     close(): void {
       if (worker) {
@@ -69,3 +93,5 @@ export function createReaderClient(dependencies: ReaderClientDependencies) {
     },
   };
 }
+
+export type ReaderClient = ReturnType<typeof createReaderClient>;

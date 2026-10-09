@@ -1,15 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { isReadOutcome, isReadReply, isReadRequest } from './protocol';
+import { isReaderReply, isReadOutcome, isReadRequest } from './protocol';
 
 describe('isReadRequest', () => {
-  it('accepts a positive id and integer coordinates', () => {
-    expect(isReadRequest({ id: 1, x: -20, y: 400 })).toBe(true);
+  it('accepts a positive id, a known operation and integer coordinates', () => {
+    expect(isReadRequest({ id: 1, op: 'read', x: -20, y: 400 })).toBe(true);
+    expect(isReadRequest({ id: 2, op: 'app', x: 0, y: 0 })).toBe(true);
   });
 
   it('rejects anything else', () => {
-    expect(isReadRequest({ id: 0, x: 1, y: 1 })).toBe(false);
-    expect(isReadRequest({ id: 1, x: 1.5, y: 1 })).toBe(false);
-    expect(isReadRequest({ id: 1, x: 1 })).toBe(false);
+    expect(isReadRequest({ id: 0, op: 'read', x: 1, y: 1 })).toBe(false);
+    expect(isReadRequest({ id: 1, op: 'read', x: 1.5, y: 1 })).toBe(false);
+    expect(isReadRequest({ id: 1, op: 'type', x: 1, y: 1 })).toBe(false);
+    expect(isReadRequest({ id: 1, x: 1, y: 1 })).toBe(false);
     expect(isReadRequest(null)).toBe(false);
   });
 });
@@ -46,9 +48,19 @@ describe('isReadOutcome', () => {
       }),
     ).toBe(false);
   });
+});
 
-  it('checks the reply id', () => {
-    expect(isReadReply({ id: 3, outcome: { ok: false, reason: 'nothing' } })).toBe(true);
-    expect(isReadReply({ id: -3, outcome: { ok: false, reason: 'nothing' } })).toBe(false);
+describe('isReaderReply', () => {
+  it('accepts readings and process names', () => {
+    expect(isReaderReply({ id: 3, outcome: { ok: false, reason: 'nothing' } })).toBe(true);
+    expect(isReaderReply({ id: 4, app: 'chrome.exe' })).toBe(true);
+    expect(isReaderReply({ id: 5, app: null })).toBe(true);
+  });
+
+  it('rejects malformed replies', () => {
+    expect(isReaderReply({ id: -3, outcome: { ok: false, reason: 'nothing' } })).toBe(false);
+    expect(isReaderReply({ id: 3, outcome: { ok: true } })).toBe(false);
+    expect(isReaderReply({ id: 3, app: 7 })).toBe(false);
+    expect(isReaderReply({ id: 3 })).toBe(false);
   });
 });

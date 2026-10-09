@@ -4,6 +4,7 @@ import type { SignedInState } from '../shared/bridge';
 export interface TrayState {
   session: SignedInState;
   orbVisible: boolean;
+  extension: string | null;
 }
 
 export interface TrayActions {
@@ -30,6 +31,12 @@ export function trayMenu(state: TrayState, actions: TrayActions): MenuItemConstr
   return [
     {
       label: signedIn ? `Signed in as ${session.email}` : 'Not signed in',
+      enabled: false,
+    },
+    {
+      label: state.extension
+        ? `Browser extension: ${state.extension}`
+        : 'Browser extension: not connected',
       enabled: false,
     },
     { type: 'separator' },

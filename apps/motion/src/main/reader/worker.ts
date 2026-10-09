@@ -1,6 +1,7 @@
 import { parentPort } from 'node:worker_threads';
 import type { ReadOutcome } from '../../shared/bridge';
-import { isReadRequest, type ReadReply, type ReadRequest } from './protocol';
+import { processName } from './process';
+import { isReadRequest, type ReaderReply, type ReadRequest } from './protocol';
 import { readAt } from './strategy';
 import { createUiAutomation, type UiAutomation } from './uia';
 
@@ -37,9 +38,26 @@ function read(request: ReadRequest): ReadOutcome {
   }
 }
 
+function app(request: ReadRequest): string | null {
+  const connected = connect();
+  if (!connected) {
+    return null;
+  }
+  try {
+    const processId = connected.processIdAt({ x: request.x, y: request.y });
+    return processId === null ? null : processName(processId);
+  } catch (error) {
+    console.error('window lookup failed', error);
+    return null;
+  }
+}
+
 port.on('message', (request: unknown) => {
   if (isReadRequest(request)) {
-    const reply: ReadReply = { id: request.id, outcome: read(request) };
+    const reply: ReaderReply =
+      request.op === 'app'
+        ? { id: request.id, app: app(request) }
+        : { id: request.id, outcome: read(request) };
     port.postMessage(reply);
   }
 });
