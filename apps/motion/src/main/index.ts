@@ -1,7 +1,6 @@
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Worker } from 'node:worker_threads';
 import {
   app,
   BrowserWindow,
@@ -14,6 +13,7 @@ import {
   session,
   shell,
   Tray,
+  utilityProcess,
 } from 'electron';
 import {
   authChangedChannel,
@@ -217,7 +217,20 @@ if (!app.requestSingleInstanceLock()) {
 
   const reader =
     process.platform === 'win32'
-      ? createReaderClient({ spawn: () => new Worker(readerWorkerPath) })
+      ? createReaderClient({
+          spawn: () => {
+            const child = utilityProcess.fork(readerWorkerPath, [], {
+              serviceName: 'Sifer Reader',
+              stdio: 'inherit',
+            });
+            return {
+              postMessage: (request) => child.postMessage(request),
+              on: (event, listener) =>
+                event === 'message' ? child.on('message', listener) : child.on('exit', listener),
+              terminate: () => child.kill(),
+            };
+          },
+        })
       : null;
 
   const readChain = createReadChain({

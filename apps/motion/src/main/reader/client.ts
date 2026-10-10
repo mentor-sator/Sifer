@@ -12,7 +12,7 @@ export const appTimeout = 300;
 
 export interface ReaderWorker {
   postMessage(request: ReadRequest): void;
-  on(event: 'message' | 'error' | 'exit', listener: (value: unknown) => void): unknown;
+  on(event: 'message' | 'exit', listener: (value: unknown) => void): unknown;
   terminate(): unknown;
 }
 
@@ -54,7 +54,6 @@ export function createReaderClient(dependencies: ReaderClientDependencies) {
         pending.get(reply.id)?.(reply, 'failed');
       }
     });
-    created.on('error', () => discard(created, 'failed'));
     created.on('exit', () => discard(created, 'failed'));
     worker = created;
     return created;
@@ -67,12 +66,16 @@ export function createReaderClient(dependencies: ReaderClientDependencies) {
     const target = ensure();
     const id = nextId++;
     return new Promise((resolve) => {
-      const timer = setTimeout(() => discard(target, 'timeout'), timeouts[op]);
-      pending.set(id, (reply, reason) => {
+      const settle: Settle = (reply, reason) => {
         clearTimeout(timer);
         pending.delete(id);
         resolve({ reply, reason });
-      });
+      };
+      const timer = setTimeout(
+        () => (op === 'read' ? discard(target, 'timeout') : settle(null, 'timeout')),
+        timeouts[op],
+      );
+      pending.set(id, settle);
       target.postMessage({ id, op, x: Math.round(point.x), y: Math.round(point.y) });
     });
   };

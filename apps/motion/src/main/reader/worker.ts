@@ -1,13 +1,12 @@
-import { parentPort } from 'node:worker_threads';
 import type { ReadOutcome } from '../../shared/bridge';
 import { processName } from './process';
 import { isReadRequest, type ReaderReply, type ReadRequest } from './protocol';
 import { readAt } from './strategy';
 import { createUiAutomation, type UiAutomation } from './uia';
 
-const port = parentPort;
+const port = process.parentPort;
 if (!port) {
-  throw new Error('the reader runs only as a worker thread');
+  throw new Error('the reader runs only as a utility process');
 }
 
 let automation: UiAutomation | null = null;
@@ -52,7 +51,8 @@ function app(request: ReadRequest): string | null {
   }
 }
 
-port.on('message', (request: unknown) => {
+port.on('message', (event) => {
+  const request: unknown = event.data;
   if (isReadRequest(request)) {
     const reply: ReaderReply =
       request.op === 'app'
@@ -62,4 +62,4 @@ port.on('message', (request: unknown) => {
   }
 });
 
-port.on('close', () => automation?.dispose());
+process.once('exit', () => automation?.dispose());

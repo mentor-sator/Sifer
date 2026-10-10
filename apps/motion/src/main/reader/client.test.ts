@@ -75,11 +75,15 @@ describe('createReaderClient', () => {
     await expect(app).resolves.toBe('chrome.exe');
   });
 
-  it('gives up on the app question quickly', async () => {
+  it('gives up on the app question quickly but keeps the reader running', async () => {
     const app = client.app({ x: 0, y: 0 });
     vi.advanceTimersByTime(appTimeout);
     await expect(app).resolves.toBeNull();
-    expect(worker().terminated).toBe(true);
+    expect(worker().terminated).toBe(false);
+    const read = client.read({ x: 0, y: 0 });
+    expect(workers).toHaveLength(1);
+    worker().reply(2, reading);
+    await expect(read).resolves.toEqual(reading);
   });
 
   it('ignores malformed replies', async () => {
@@ -103,9 +107,9 @@ describe('createReaderClient', () => {
     await expect(next).resolves.toEqual(reading);
   });
 
-  it('fails pending reads when the worker crashes', async () => {
+  it('fails pending reads when the reader process exits', async () => {
     const read = client.read({ x: 0, y: 0 });
-    worker().emit('error', new Error('crash'));
+    worker().emit('exit', 1);
     await expect(read).resolves.toEqual({ ok: false, reason: 'failed' });
     expect(vi.getTimerCount()).toBe(0);
   });
