@@ -25,7 +25,8 @@ function identity(): { browser: string; version: string } {
 }
 
 function boxOf(window: Browser.windows.Window): WindowBox | null {
-  if (window.id === undefined) {
+  const tab = window.tabs?.find((candidate) => candidate.active);
+  if (window.id === undefined || tab?.id === undefined) {
     return null;
   }
   return {
@@ -36,26 +37,28 @@ function boxOf(window: Browser.windows.Window): WindowBox | null {
     height: window.height ?? 0,
     focused: window.focused,
     minimized: window.state === 'minimized',
+    tabId: tab.id,
+    tabTitle: tab.title ?? '',
   };
 }
 
-async function readPage(point: ScreenPoint): Promise<ReadOutcome> {
-  const windows = await browser.windows.getAll({ windowTypes: ['normal'] });
+async function readPage(point: ScreenPoint, title: string): Promise<ReadOutcome> {
+  const windows = await browser.windows.getAll({
+    populate: true,
+    windowTypes: ['normal', 'popup', 'app'],
+  });
   const target = windowAt(
     windows.map(boxOf).filter((box): box is WindowBox => box !== null),
     point,
+    title,
   );
   if (!target) {
     return { ok: false, reason: 'nothing' };
   }
-  const [tab] = await browser.tabs.query({ active: true, windowId: target.id });
-  if (tab?.id === undefined) {
-    return { ok: false, reason: 'nothing' };
-  }
   try {
-    const zoom = await browser.tabs.getZoom(tab.id);
+    const zoom = await browser.tabs.getZoom(target.tabId);
     const request: PageReadRequest = { type: 'sifer.read', x: point.x, y: point.y, zoom };
-    const outcome: unknown = await browser.tabs.sendMessage(tab.id, request, { frameId: 0 });
+    const outcome: unknown = await browser.tabs.sendMessage(target.tabId, request, { frameId: 0 });
     return (outcome as ReadOutcome | undefined) ?? { ok: false, reason: 'nothing' };
   } catch {
     return { ok: false, reason: 'unsupported' };

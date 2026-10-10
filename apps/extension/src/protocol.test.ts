@@ -10,11 +10,12 @@ describe('parseMotionMessage', () => {
       token,
     });
     expect(parseMotionMessage('{"type":"pair-refused"}')).toEqual({ type: 'pair-refused' });
-    expect(parseMotionMessage('{"type":"read","id":3,"x":10.5,"y":-4}')).toEqual({
+    expect(parseMotionMessage('{"type":"read","id":3,"x":10.5,"y":-4,"title":"Inbox"}')).toEqual({
       type: 'read',
       id: 3,
       x: 10.5,
       y: -4,
+      title: 'Inbox',
     });
   });
 
@@ -22,7 +23,13 @@ describe('parseMotionMessage', () => {
     expect(parseMotionMessage(new ArrayBuffer(4))).toBeNull();
     expect(parseMotionMessage('nonsense')).toBeNull();
     expect(parseMotionMessage('{"type":"paired","token":"short"}')).toBeNull();
-    expect(parseMotionMessage('{"type":"read","id":1.5,"x":1,"y":1}')).toBeNull();
+    expect(parseMotionMessage('{"type":"read","id":1.5,"x":1,"y":1,"title":"a"}')).toBeNull();
+    expect(parseMotionMessage('{"type":"read","id":1,"x":1,"y":1}')).toBeNull();
+    expect(
+      parseMotionMessage(
+        JSON.stringify({ type: 'read', id: 1, x: 1, y: 1, title: 'x'.repeat(513) }),
+      ),
+    ).toBeNull();
     expect(parseMotionMessage('{"type":"eval","code":"alert(1)"}')).toBeNull();
   });
 });

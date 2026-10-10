@@ -53,7 +53,7 @@ describe('isReadOutcome', () => {
 describe('isReaderReply', () => {
   it('accepts readings and process names', () => {
     expect(isReaderReply({ id: 3, outcome: { ok: false, reason: 'nothing' } })).toBe(true);
-    expect(isReaderReply({ id: 4, app: 'chrome.exe' })).toBe(true);
+    expect(isReaderReply({ id: 4, app: { process: 'chrome.exe', title: 'Inbox' } })).toBe(true);
     expect(isReaderReply({ id: 5, app: null })).toBe(true);
   });
 
@@ -61,6 +61,9 @@ describe('isReaderReply', () => {
     expect(isReaderReply({ id: -3, outcome: { ok: false, reason: 'nothing' } })).toBe(false);
     expect(isReaderReply({ id: 3, outcome: { ok: true } })).toBe(false);
     expect(isReaderReply({ id: 3, app: 7 })).toBe(false);
+    expect(isReaderReply({ id: 3, app: 'chrome.exe' })).toBe(false);
+    expect(isReaderReply({ id: 3, app: { process: 'chrome.exe' } })).toBe(false);
+    expect(isReaderReply({ id: 3, app: { process: 'a', title: 'x'.repeat(513) } })).toBe(false);
     expect(isReaderReply({ id: 3 })).toBe(false);
   });
 });

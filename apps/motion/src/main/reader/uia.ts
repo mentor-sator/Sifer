@@ -1,5 +1,17 @@
-import koffi, { type TypeObject } from 'koffi';
+import koffi from 'koffi';
 import type { Point } from '../drag';
+import {
+  check,
+  ComError,
+  ComObject,
+  comSignatures,
+  guid,
+  intOut,
+  parseGuid,
+  pointerOut,
+  using,
+  type Guid,
+} from './com';
 import {
   covers,
   maxReadingLength,
@@ -10,20 +22,9 @@ import {
 } from './strategy';
 
 const point = koffi.struct('SiferUiaPoint', { x: 'int32', y: 'int32' });
-const guid = koffi.struct('SiferUiaGuid', {
-  data1: 'uint32',
-  data2: 'uint16',
-  data3: 'uint16',
-  data4: koffi.array('uint8', 8),
-});
-
-const pointerOut = koffi.out(koffi.pointer('void *'));
-const intOut = koffi.out(koffi.pointer('int32'));
 
 const signatures = {
-  release: koffi.proto('__stdcall', 'SiferUiaRelease', 'uint32', ['void *']),
-  getPointer: koffi.proto('__stdcall', 'SiferUiaGetPointer', 'int32', ['void *', pointerOut]),
-  getInt: koffi.proto('__stdcall', 'SiferUiaGetInt', 'int32', ['void *', intOut]),
+  getPointer: comSignatures.getPointer,
   atPoint: koffi.proto('__stdcall', 'SiferUiaAtPoint', 'int32', ['void *', point, pointerOut]),
   parentOf: koffi.proto('__stdcall', 'SiferUiaParentOf', 'int32', ['void *', 'void *', pointerOut]),
   patternAs: koffi.proto('__stdcall', 'SiferUiaPatternAs', 'int32', [
@@ -37,10 +38,9 @@ const signatures = {
 };
 
 const slots = {
-  release: 2,
   automation: { elementFromPoint: 7, controlViewWalker: 14 },
   walker: { parent: 3 },
-  element: { patternAs: 14, processId: 20, controlType: 21, name: 23, isPassword: 35 },
+  element: { patternAs: 14, controlType: 21, name: 23, isPassword: 35 },
   textPattern: { rangeFromPoint: 3, rangeFromChild: 4 },
   textRange: { expand: 6, boundingRectangles: 10, getText: 12 },
   valuePattern: { value: 4 },
@@ -53,41 +53,12 @@ const clsctxInprocServer = 1;
 const coinitMultithreaded = 0;
 const rpcChangedMode = 0x80010106 | 0;
 
-type Guid = { data1: number; data2: number; data3: number; data4: number[] };
-
-function parseGuid(text: string): Guid {
-  const hex = text.replace(/-/g, '');
-  return {
-    data1: Number.parseInt(hex.slice(0, 8), 16),
-    data2: Number.parseInt(hex.slice(8, 12), 16),
-    data3: Number.parseInt(hex.slice(12, 16), 16),
-    data4: Array.from({ length: 8 }, (_, index) =>
-      Number.parseInt(hex.slice(16 + index * 2, 18 + index * 2), 16),
-    ),
-  };
-}
-
 const ids = {
   cuiAutomation: parseGuid('ff48dba4-60ef-4201-aa87-54103eef594e'),
   iuiAutomation: parseGuid('30cbe57d-d9d0-452a-ab13-7ac5ac4825ee'),
   textPattern: parseGuid('32eba289-3583-42c9-9c59-3b6d9a1e9b6a'),
   valuePattern: parseGuid('a94cd8b1-0844-4cd6-9d2d-640537ab39e9'),
 };
-
-export class ComError extends Error {
-  constructor(
-    readonly operation: string,
-    readonly hresult: number,
-  ) {
-    super(`${operation} failed with 0x${(hresult >>> 0).toString(16).padStart(8, '0')}`);
-  }
-}
-
-function check(operation: string, hresult: number): void {
-  if (hresult < 0) {
-    throw new ComError(operation, hresult);
-  }
-}
 
 const ole32 = koffi.load('ole32.dll');
 const oleaut32 = koffi.load('oleaut32.dll');
@@ -100,8 +71,6 @@ const coCreateInstance = ole32.func('__stdcall', 'CoCreateInstance', 'int32', [
   koffi.pointer(guid),
   pointerOut,
 ]);
-const sysStringLen = oleaut32.func('uint32 __stdcall SysStringLen(void *text)');
-const sysFreeString = oleaut32.func('void __stdcall SysFreeString(void *text)');
 const safeArrayGetLBound = oleaut32.func('__stdcall', 'SafeArrayGetLBound', 'int32', [
   'void *',
   'uint32',
@@ -118,62 +87,6 @@ const safeArrayAccessData = oleaut32.func('__stdcall', 'SafeArrayAccessData', 'i
 ]);
 const safeArrayUnaccessData = oleaut32.func('int32 __stdcall SafeArrayUnaccessData(void *array)');
 const safeArrayDestroy = oleaut32.func('int32 __stdcall SafeArrayDestroy(void *array)');
-
-class ComObject {
-  #pointer: unknown;
-
-  constructor(pointer: unknown) {
-    this.#pointer = pointer;
-  }
-
-  get pointer(): unknown {
-    if (this.#pointer === null) {
-      throw new Error('com object already released');
-    }
-    return this.#pointer;
-  }
-
-  call(slot: number, signature: TypeObject, ...args: unknown[]): number {
-    const self = this.pointer;
-    const table = koffi.decode(self, 'void *') as unknown;
-    const method = koffi.decode(table, slot * koffi.sizeof('void *'), 'void *') as unknown;
-    return koffi.call(method, signature, self, ...args) as number;
-  }
-
-  pointerOut(operation: string, slot: number, signature: TypeObject, ...args: unknown[]) {
-    const out: unknown[] = [null];
-    check(operation, this.call(slot, signature, ...args, out));
-    return out[0] ? new ComObject(out[0]) : null;
-  }
-
-  string(operation: string, slot: number, signature: TypeObject, ...args: unknown[]) {
-    const out: unknown[] = [null];
-    check(operation, this.call(slot, signature, ...args, out));
-    return out[0] ? takeString(out[0]) : null;
-  }
-
-  int(operation: string, slot: number): number {
-    const out = [0];
-    check(operation, this.call(slot, signatures.getInt, out));
-    return out[0] ?? 0;
-  }
-
-  release(): void {
-    if (this.#pointer !== null) {
-      this.call(slots.release, signatures.release);
-      this.#pointer = null;
-    }
-  }
-}
-
-function takeString(text: unknown): string {
-  try {
-    const length = sysStringLen(text) as number;
-    return length > 0 ? (koffi.decode.string16(text, length) as string) : '';
-  } finally {
-    sysFreeString(text);
-  }
-}
 
 function takeRects(array: unknown): ScreenRect[] {
   try {
@@ -224,17 +137,6 @@ function textOf(range: ComObject): string {
   return (
     range.string('GetText', slots.textRange.getText, signatures.getText, maxReadingLength) ?? ''
   );
-}
-
-function using<T>(value: ComObject | null, use: (value: ComObject) => T): T | null {
-  if (!value) {
-    return null;
-  }
-  try {
-    return use(value);
-  } finally {
-    value.release();
-  }
 }
 
 class UiaNode implements AutomationNode {
@@ -340,7 +242,6 @@ class UiaNode implements AutomationNode {
 }
 
 export interface UiAutomation extends Automation {
-  processIdAt(point: Point): number | null;
   dispose(): void;
 }
 
@@ -381,17 +282,6 @@ export function createUiAutomation(): UiAutomation {
           at,
         );
         return element ? new UiaNode(element, walker) : null;
-      },
-      processIdAt(at: Point): number | null {
-        return using(
-          automation.pointerOut(
-            'ElementFromPoint',
-            slots.automation.elementFromPoint,
-            signatures.atPoint,
-            at,
-          ),
-          (element) => element.int('get_CurrentProcessId', slots.element.processId),
-        );
       },
       dispose(): void {
         walker.release();

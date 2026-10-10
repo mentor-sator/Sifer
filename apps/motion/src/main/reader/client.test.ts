@@ -71,8 +71,11 @@ describe('createReaderClient', () => {
   it('asks which app is under a point', async () => {
     const app = client.app({ x: 10, y: 20 });
     expect(worker().sent).toEqual([{ id: 1, op: 'app', x: 10, y: 20 }]);
-    worker().emit('message', { id: 1, app: 'chrome.exe' });
-    await expect(app).resolves.toBe('chrome.exe');
+    worker().emit('message', {
+      id: 1,
+      app: { process: 'chrome.exe', title: 'Inbox - Google Chrome' },
+    });
+    await expect(app).resolves.toEqual({ process: 'chrome.exe', title: 'Inbox - Google Chrome' });
   });
 
   it('gives up on the app question quickly but keeps the reader running', async () => {

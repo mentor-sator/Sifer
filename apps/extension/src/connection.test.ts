@@ -110,9 +110,9 @@ describe('createConnection', () => {
     await connection.connect();
     const socket = last(sockets);
     socket.accept();
-    socket.receive({ type: 'read', id: 7, x: 120, y: 340 });
+    socket.receive({ type: 'read', id: 7, x: 120, y: 340, title: 'Inbox - Google Chrome' });
     await vi.waitFor(() => expect(socket.sent).toHaveLength(2));
-    expect(read).toHaveBeenCalledWith({ x: 120, y: 340 });
+    expect(read).toHaveBeenCalledWith({ x: 120, y: 340 }, 'Inbox - Google Chrome');
     expect(socket.sent[1]).toMatchObject({ type: 'reading', id: 7, outcome: { ok: true } });
   });
 
@@ -122,7 +122,7 @@ describe('createConnection', () => {
     await connection.connect();
     const socket = last(sockets);
     socket.accept();
-    socket.receive({ type: 'read', id: 1, x: 0, y: 0 });
+    socket.receive({ type: 'read', id: 1, x: 0, y: 0, title: 'Inbox' });
     await vi.waitFor(() =>
       expect(socket.sent[1]).toEqual({
         type: 'reading',

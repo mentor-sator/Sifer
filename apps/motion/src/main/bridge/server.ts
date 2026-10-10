@@ -238,7 +238,7 @@ export function createBridge(dependencies: BridgeDependencies) {
       server = null;
       return new Promise((resolve) => (closing ? closing.close(() => resolve()) : resolve()));
     },
-    read(point: Point): Promise<ReadOutcome | null> {
+    read(point: Point, title: string): Promise<ReadOutcome | null> {
       const target = session;
       if (!target) {
         return Promise.resolve(null);
@@ -252,7 +252,13 @@ export function createBridge(dependencies: BridgeDependencies) {
           resolve(outcome);
         };
         pending.set(id, settle);
-        send(target, { type: 'read', id, x: Math.round(point.x), y: Math.round(point.y) });
+        send(target, {
+          type: 'read',
+          id,
+          x: Math.round(point.x),
+          y: Math.round(point.y),
+          title,
+        });
       });
     },
   };

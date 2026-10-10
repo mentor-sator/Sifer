@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import {
   app,
   BrowserWindow,
+  desktopCapturer,
   dialog,
   ipcMain,
   Menu,
@@ -34,7 +35,7 @@ import {
   type SignInResult,
 } from '../shared/bridge';
 import { readConfig } from './config';
-import { createDrag, frameInterval } from './drag';
+import { createDrag, frameInterval, type Point } from './drag';
 import { createDropReader, dropPoint } from './drop';
 import { createGoogleSignIn, GoogleSignInError } from './google';
 import { createIdentityClient, IdentityError } from './identity';
@@ -43,6 +44,7 @@ import { createBridge, type Bridge } from './bridge/server';
 import { createTokenStore } from './bridge/token';
 import { createSessionManager, type SessionManager } from './session';
 import { panelPlacement, panelSize, panelWindowOptions } from './panel';
+import { contextMargin, createScreenCapture } from './reader/capture';
 import { createReadChain } from './reader/chain';
 import { createReaderClient } from './reader/client';
 import { signInWindowOptions } from './signin';
@@ -233,12 +235,42 @@ if (!app.requestSingleInstanceLock()) {
         })
       : null;
 
+  const capture = createScreenCapture({
+    display: (point) => screen.getDisplayNearestPoint(point),
+    screens: async (size) =>
+      (await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: size })).map(
+        (source) => ({ displayId: source.display_id, image: source.thumbnail }),
+      ),
+  });
+
+  const screenshot = async (dip: Point): Promise<ReadOutcome> => {
+    if (!reader) {
+      return { ok: false, reason: 'unsupported' };
+    }
+    try {
+      const image = await capture(dip, orbSize / 2 + contextMargin);
+      if (!image) {
+        console.error('screenshot reader: no capture');
+        return { ok: false, reason: 'nothing' };
+      }
+      const outcome = await reader.recognize(image);
+      console.log(
+        `screenshot reader: ${image.width}x${image.height} at ${image.point.x},${image.point.y} -> ${outcome.ok ? 'text' : outcome.reason}`,
+      );
+      return outcome;
+    } catch (error) {
+      console.error('screenshot reader failed', error);
+      return { ok: false, reason: 'failed' };
+    }
+  };
+
   const readChain = createReadChain({
     app: (physical) => (reader ? reader.app(physical) : Promise.resolve(null)),
-    extensionConnected: () => bridge?.connected ?? false,
-    dom: (dip) => (bridge ? bridge.read(dip) : Promise.resolve(null)),
+    extensionBrowser: () => (bridge?.connected ? (bridge.browser?.browser ?? null) : null),
+    dom: (dip, title) => (bridge ? bridge.read(dip, title) : Promise.resolve(null)),
     accessibility: (physical) =>
       reader ? reader.read(physical) : Promise.resolve({ ok: false, reason: 'unsupported' }),
+    screenshot,
   });
 
   const drops = createDropReader({

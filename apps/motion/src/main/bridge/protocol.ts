@@ -19,7 +19,7 @@ export type ExtensionMessage =
 export type MotionMessage =
   | { type: 'paired'; token: string }
   | { type: 'pair-refused' }
-  | { type: 'read'; id: number; x: number; y: number };
+  | { type: 'read'; id: number; x: number; y: number; title: string };
 
 const tokenPattern = /^[A-Za-z0-9_-]{43}$/;
 

@@ -36,7 +36,7 @@ export interface ConnectionDependencies {
   open(url: string, protocols: string[], handlers: SocketHandlers): SocketLike;
   storage: TokenStorage;
   reachable(): Promise<boolean>;
-  read(point: ScreenPoint): Promise<ReadOutcome>;
+  read(point: ScreenPoint, title: string): Promise<ReadOutcome>;
   identity: { browser: string; version: string };
   setTimer(callback: () => void, milliseconds: number): unknown;
   clearTimer(handle: unknown): void;
@@ -92,10 +92,15 @@ export function createConnection(dependencies: ConnectionDependencies) {
     }, delay);
   };
 
-  const answer = async (target: SocketLike, id: number, point: ScreenPoint): Promise<void> => {
+  const answer = async (
+    target: SocketLike,
+    id: number,
+    point: ScreenPoint,
+    title: string,
+  ): Promise<void> => {
     let outcome: ReadOutcome;
     try {
-      outcome = await dependencies.read(point);
+      outcome = await dependencies.read(point, title);
     } catch {
       outcome = { ok: false, reason: 'failed' };
     }
@@ -132,7 +137,7 @@ export function createConnection(dependencies: ConnectionDependencies) {
         message: (data) => {
           const message = parseMotionMessage(data);
           if (message?.type === 'read') {
-            void answer(created, message.id, { x: message.x, y: message.y });
+            void answer(created, message.id, { x: message.x, y: message.y }, message.title);
           }
         },
         close: (code) => {

@@ -19,7 +19,7 @@ export interface ScreenPoint {
 export type MotionMessage =
   | { type: 'paired'; token: string }
   | { type: 'pair-refused' }
-  | { type: 'read'; id: number; x: number; y: number };
+  | { type: 'read'; id: number; x: number; y: number; title: string };
 
 export type ExtensionMessage =
   | { type: 'hello'; browser: string; version: string }
@@ -44,6 +44,7 @@ export const pairProtocol = 'sifer.pair';
 export const tokenProtocolPrefix = 'sifer.token.';
 
 const tokenPattern = /^[A-Za-z0-9_-]{43}$/;
+export const maxTitleLength = 512;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -74,12 +75,15 @@ export function parseMotionMessage(raw: unknown): MotionMessage | null {
     case 'read':
       return Number.isSafeInteger(value['id']) &&
         Number.isFinite(value['x']) &&
-        Number.isFinite(value['y'])
+        Number.isFinite(value['y']) &&
+        typeof value['title'] === 'string' &&
+        value['title'].length <= maxTitleLength
         ? {
             type: 'read',
             id: value['id'] as number,
             x: value['x'] as number,
             y: value['y'] as number,
+            title: value['title'],
           }
         : null;
     default:

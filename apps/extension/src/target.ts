@@ -8,16 +8,30 @@ export interface WindowBox {
   readonly height: number;
   readonly focused: boolean;
   readonly minimized: boolean;
+  readonly tabId: number;
+  readonly tabTitle: string;
 }
 
-export function windowAt(windows: readonly WindowBox[], point: ScreenPoint): WindowBox | null {
-  const containing = windows.filter(
-    (candidate) =>
-      !candidate.minimized &&
-      point.x >= candidate.left &&
-      point.x < candidate.left + candidate.width &&
-      point.y >= candidate.top &&
-      point.y < candidate.top + candidate.height,
+function contains(window: WindowBox, point: ScreenPoint): boolean {
+  return (
+    !window.minimized &&
+    point.x >= window.left &&
+    point.x < window.left + window.width &&
+    point.y >= window.top &&
+    point.y < window.top + window.height
   );
-  return containing.find((candidate) => candidate.focused) ?? containing[0] ?? null;
+}
+
+export function windowAt(
+  windows: readonly WindowBox[],
+  point: ScreenPoint,
+  title: string,
+): WindowBox | null {
+  const matching = windows.filter(
+    (candidate) =>
+      contains(candidate, point) &&
+      candidate.tabTitle !== '' &&
+      title.startsWith(candidate.tabTitle),
+  );
+  return matching.find((candidate) => candidate.focused) ?? matching[0] ?? null;
 }

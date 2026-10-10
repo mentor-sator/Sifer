@@ -86,7 +86,7 @@ describe('readAt', () => {
     expect(readAt(automation, point)).toMatchObject({
       reading: { kind: 'text', control: 'Document', text: 'Latest from our changelog' },
     });
-    expect(asked).toEqual(['heading value', 'heading text at 10,20', 'document text of heading']);
+    expect(asked).toEqual(['heading text at 10,20', 'document text of heading']);
     expect(released).toEqual(['heading', 'document']);
   });
 
@@ -136,6 +136,31 @@ describe('readAt', () => {
       reading: { kind: 'value', control: 'Edit', text: 'search terms' },
     });
     expect(asked).toEqual(['edit value', 'edit text at 10,20']);
+  });
+
+  it('reads the name, not the value, of a list or tree entry', () => {
+    const { automation, asked } = automationFor({
+      id: 'site',
+      controlType: 50024,
+      name: 'wiredin@192.168.1.10',
+      value: '0',
+    });
+    expect(readAt(automation, point)).toMatchObject({
+      reading: { kind: 'name', control: 'Tree item', text: 'wiredin@192.168.1.10' },
+    });
+    expect(asked).not.toContain('site value');
+  });
+
+  it('ignores a container whose only rectangle is an embedded video or image', () => {
+    const { automation } = automationFor({
+      id: 'video',
+      parent: {
+        id: 'document',
+        childText: 'Episodes Audio & Subtitles Full screen',
+        bounds: [{ x: 0, y: 0, width: 1900, height: 900 }],
+      },
+    });
+    expect(readAt(automation, point)).toEqual({ ok: false, reason: 'nothing' });
   });
 
   it('never reads a password field', () => {
@@ -230,5 +255,9 @@ describe('covers', () => {
     expect(covers(line, { x: 95, y: 210 })).toBe(false);
     expect(covers(line, { x: 250, y: 226 })).toBe(false);
     expect(covers([], { x: 0, y: 0 })).toBe(false);
+  });
+
+  it('rejects rectangles taller than a line of text', () => {
+    expect(covers([{ x: 0, y: 0, width: 1900, height: 900 }], { x: 400, y: 400 })).toBe(false);
   });
 });

@@ -4,6 +4,9 @@ import type { Point } from '../drag';
 export const maxReadingLength = 20_000;
 export const maxAncestors = 10;
 export const boundsTolerance = 4;
+export const maxLineHeight = 160;
+
+export const valueControls: ReadonlySet<number> = new Set([50003, 50004, 50016, 50030]);
 
 export interface ScreenRect {
   readonly x: number;
@@ -41,7 +44,11 @@ const controlNames: Readonly<Record<number, string>> = {
   50007: 'List item',
   50008: 'List',
   50011: 'Menu item',
+  50016: 'Spinner',
+  50019: 'Tab item',
   50020: 'Text',
+  50023: 'Tree',
+  50024: 'Tree item',
   50025: 'Custom',
   50026: 'Group',
   50029: 'Data item',
@@ -74,6 +81,7 @@ export function covers(
 ): boolean {
   return bounds.some(
     (rect) =>
+      rect.height <= maxLineHeight &&
       point.x >= rect.x - tolerance &&
       point.x <= rect.x + rect.width + tolerance &&
       point.y >= rect.y - tolerance &&
@@ -102,7 +110,9 @@ export function readAt(automation: Automation, point: Point): ReadOutcome {
     if (target.isPassword()) {
       return { ok: false, reason: 'protected' };
     }
-    const own = found('value', target, target.value());
+    const own = valueControls.has(target.controlType())
+      ? found('value', target, target.value())
+      : null;
     let container = false;
     let node: AutomationNode | null = target;
     for (let depth = 0; node && depth <= maxAncestors; depth += 1) {

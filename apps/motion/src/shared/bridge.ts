@@ -32,7 +32,7 @@ export interface AuthControls {
 
 export type ReadingKind = 'text' | 'value' | 'name';
 
-export type ReadingSource = 'dom' | 'accessibility';
+export type ReadingSource = 'dom' | 'accessibility' | 'screenshot';
 
 export interface Reading {
   readonly source: ReadingSource;

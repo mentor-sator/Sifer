@@ -13,6 +13,7 @@ const failureText: Record<ReadFailure, string> = {
 const sourceText: Record<ReadingSource, string> = {
   dom: 'from the page',
   accessibility: 'from the app',
+  screenshot: 'from a screenshot',
 };
 
 const kindText: Record<ReadingKind, string> = {
